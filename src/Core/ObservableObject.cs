@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -35,10 +35,13 @@ namespace WinMemoryCleaner
                 var handler = PropertyChanged;
                 var args = new PropertyChangedEventArgs(propertyName);
 
-                // Marshal to UI thread if necessary
+                // Marshal to UI thread if necessary - use BeginInvoke to avoid deadlock
                 if (Application.Current != null && Application.Current.Dispatcher != null && !Application.Current.Dispatcher.CheckAccess())
                 {
-                    Application.Current.Dispatcher.Invoke(handler, this, args);
+                    Application.Current.Dispatcher.BeginInvoke((Action)(() =>
+                    {
+                        handler.Invoke(this, args);
+                    }), System.Windows.Threading.DispatcherPriority.Normal);
                 }
                 else
                 {

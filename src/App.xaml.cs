@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -10,22 +10,22 @@ using System.Security.Principal;
 using System.ServiceProcess;
 using System.Threading;
 using System.Windows;
-using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Threading;
+using WinForms = System.Windows.Forms;
 
 namespace WinMemoryCleaner
 {
     /// <summary>
     /// Windows Memory Cleaner
     /// </summary>
-    public partial class App : IDisposable
+    public partial class App : Application, IDisposable
     {
         #region Fields
 
         private static bool _isRunning;
         private static Mutex _mutex;
-        private static NotifyIcon _notifyIcon;
+        private static WinForms.NotifyIcon _notifyIcon;
         private static readonly List<string> _notifications = new List<string>();
         private static readonly object _showHidelock = new object();
 
@@ -309,14 +309,14 @@ namespace WinMemoryCleaner
         /// </summary>
         /// <param name="sender">The sender.</param>
         /// <param name="e">The <see cref="EventArgs" /> instance containing the event data.</param>
-        private void OnNotifyIconClick(object sender, System.Windows.Forms.MouseEventArgs e)
+        private void OnNotifyIconClick(object sender, WinForms.MouseEventArgs e)
         {
             lock (_showHidelock)
             {
                 switch (e.Button)
                 {
                     // Show/Hide
-                    case MouseButtons.Left:
+                    case WinForms.MouseButtons.Left:
                         if (MainWindow == null)
                             return;
 
@@ -376,7 +376,7 @@ namespace WinMemoryCleaner
                         return;
 
                     // Optimize
-                    case MouseButtons.Middle:
+                    case WinForms.MouseButtons.Middle:
                         if (!Settings.TrayIconOptimizeOnMiddleMouseClick)
                             return;
 
@@ -475,7 +475,7 @@ namespace WinMemoryCleaner
                         ThemeManager.Theme = Enums.Theme.Dark;
 
                         // Notification Areas
-                        _notifyIcon = new NotifyIcon();
+                        _notifyIcon = new WinForms.NotifyIcon();
                         _notifyIcon.MouseUp += OnNotifyIconClick;
 
                         // DI/IOC
