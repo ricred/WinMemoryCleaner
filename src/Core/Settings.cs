@@ -1,9 +1,10 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.Linq;
+using System.Threading;
 using System.Windows.Input;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
@@ -13,6 +14,8 @@ namespace WinMemoryCleaner
     public static class Settings
     {
         private static readonly CultureInfo _culture = new CultureInfo(Constants.Windows.Locale.Name.English);
+        private static readonly object _settingsLock = new object();
+        private static CancellationTokenSource _saveCancellationTokenSource;
 
         #region Constructors
 
@@ -224,6 +227,173 @@ namespace WinMemoryCleaner
             }
         }
 
+        /// <summary>
+        /// Saves settings asynchronously with debouncing to avoid blocking the UI thread.
+        /// </summary>
+        public static void SaveAsync()
+        {
+            lock (_settingsLock)
+            {
+                // Cancel any pending save operation
+                if (_saveCancellationTokenSource != null)
+                {
+                    _saveCancellationTokenSource.Cancel();
+                    _saveCancellationTokenSource.Dispose();
+                }
+                _saveCancellationTokenSource = new CancellationTokenSource();
+
+                // Capture current settings values
+                var alwaysOnTop = AlwaysOnTop;
+                var autoOptimizationInterval = AutoOptimizationInterval;
+                var autoOptimizationMemoryUsage = AutoOptimizationMemoryUsage;
+                var autoUpdate = AutoUpdate;
+                var closeAfterOptimization = CloseAfterOptimization;
+                var closeToTheNotificationArea = CloseToTheNotificationArea;
+                var compactMode = CompactMode;
+                var createStartMenuShortcut = CreateStartMenuShortcut;
+                var fontSize = FontSize;
+                var language = Language;
+                var memoryAreas = MemoryAreas;
+                var optimizationKey = OptimizationKey;
+                var optimizationModifiers = OptimizationModifiers;
+                var runOnPriority = RunOnPriority;
+                var runOnStartup = RunOnStartup;
+                var showOptimizationNotifications = ShowOptimizationNotifications;
+                var showVirtualMemory = ShowVirtualMemory;
+                var startMinimized = StartMinimized;
+                var trayIconBackgroundColor = TrayIconBackgroundColor;
+                var trayIconDangerColor = TrayIconDangerColor;
+                var trayIconDangerLevel = TrayIconDangerLevel;
+                var trayIconOptimizeOnMiddleMouseClick = TrayIconOptimizeOnMiddleMouseClick;
+                var trayIconOptimizingColor = TrayIconOptimizingColor;
+                var trayIconShowMemoryUsage = TrayIconShowMemoryUsage;
+                var trayIconTextColor = TrayIconTextColor;
+                var trayIconUseTransparentBackground = TrayIconUseTransparentBackground;
+                var trayIconWarningColor = TrayIconWarningColor;
+                var trayIconWarningLevel = TrayIconWarningLevel;
+                var useHotkey = UseHotkey;
+                var processExclusionList = new SortedSet<string>(ProcessExclusionList, StringComparer.OrdinalIgnoreCase);
+                var cts = _saveCancellationTokenSource;
+
+                // Start new save operation with debouncing using ThreadPool
+                ThreadPool.QueueUserWorkItem(state =>
+                {
+                    try
+                    {
+                        // Wait 500ms before saving (debounce)
+                        if (!cts.Token.WaitHandle.WaitOne(500))
+                        {
+                            // Cancellation was not requested, proceed with save
+                            SaveInternal(
+                                alwaysOnTop, autoOptimizationInterval, autoOptimizationMemoryUsage, autoUpdate,
+                                closeAfterOptimization, closeToTheNotificationArea, compactMode, createStartMenuShortcut,
+                                fontSize, language, memoryAreas, optimizationKey, optimizationModifiers, runOnPriority,
+                                runOnStartup, showOptimizationNotifications, showVirtualMemory, startMinimized,
+                                trayIconBackgroundColor, trayIconDangerColor, trayIconDangerLevel, trayIconOptimizeOnMiddleMouseClick,
+                                trayIconOptimizingColor, trayIconShowMemoryUsage, trayIconTextColor, trayIconUseTransparentBackground,
+                                trayIconWarningColor, trayIconWarningLevel, useHotkey, processExclusionList);
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Save was canceled, which is expected behavior
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error(ex);
+                    }
+                });
+            }
+        }
+
+        /// <summary>
+        /// Internal save method that performs the actual registry I/O.
+        /// </summary>
+        private static void SaveInternal()
+        {
+            SaveInternal(
+                AlwaysOnTop, AutoOptimizationInterval, AutoOptimizationMemoryUsage, AutoUpdate,
+                CloseAfterOptimization, CloseToTheNotificationArea, CompactMode, CreateStartMenuShortcut,
+                FontSize, Language, MemoryAreas, OptimizationKey, OptimizationModifiers, RunOnPriority,
+                RunOnStartup, ShowOptimizationNotifications, ShowVirtualMemory, StartMinimized,
+                TrayIconBackgroundColor, TrayIconDangerColor, TrayIconDangerLevel, TrayIconOptimizeOnMiddleMouseClick,
+                TrayIconOptimizingColor, TrayIconShowMemoryUsage, TrayIconTextColor, TrayIconUseTransparentBackground,
+                TrayIconWarningColor, TrayIconWarningLevel, UseHotkey, ProcessExclusionList);
+        }
+
+        /// <summary>
+        /// Internal save method that performs the actual registry I/O with captured values.
+        /// </summary>
+        private static void SaveInternal(
+            bool alwaysOnTop, int autoOptimizationInterval, int autoOptimizationMemoryUsage, bool autoUpdate,
+            bool closeAfterOptimization, bool closeToTheNotificationArea, bool compactMode, bool createStartMenuShortcut,
+            double fontSize, string language, Enums.Memory.Areas memoryAreas, Key optimizationKey, ModifierKeys optimizationModifiers,
+            Enums.Priority runOnPriority, bool runOnStartup, bool showOptimizationNotifications, bool showVirtualMemory,
+            bool startMinimized, Brush trayIconBackgroundColor, Brush trayIconDangerColor, byte trayIconDangerLevel,
+            bool trayIconOptimizeOnMiddleMouseClick, Brush trayIconOptimizingColor, bool trayIconShowMemoryUsage,
+            Brush trayIconTextColor, bool trayIconUseTransparentBackground, Brush trayIconWarningColor,
+            byte trayIconWarningLevel, bool useHotkey, SortedSet<string> processExclusionList)
+        {
+            try
+            {
+                // Process Exclusion List
+                Registry.LocalMachine.DeleteSubKey(Constants.App.Registry.Key.ProcessExclusionList, false);
+
+                if (processExclusionList.Any())
+                {
+                    using (var key = Registry.LocalMachine.CreateSubKey(Constants.App.Registry.Key.ProcessExclusionList))
+                    {
+                        if (key != null)
+                        {
+                            foreach (var process in processExclusionList)
+                                key.SetValue(process.RemoveWhitespaces().Replace(".exe", string.Empty).ToLower(_culture), string.Empty, RegistryValueKind.String);
+                        }
+                    }
+                }
+
+                // Settings
+                using (var key = Registry.LocalMachine.CreateSubKey(Constants.App.Registry.Key.Settings))
+                {
+                    if (key != null)
+                    {
+                        key.SetValue(Helper.NameOf(() => AlwaysOnTop), alwaysOnTop ? 1 : 0);
+                        key.SetValue(Helper.NameOf(() => AutoOptimizationInterval), autoOptimizationInterval);
+                        key.SetValue(Helper.NameOf(() => AutoOptimizationMemoryUsage), autoOptimizationMemoryUsage);
+                        key.SetValue(Helper.NameOf(() => AutoUpdate), autoUpdate ? 1 : 0);
+                        key.SetValue(Helper.NameOf(() => CloseAfterOptimization), closeAfterOptimization ? 1 : 0);
+                        key.SetValue(Helper.NameOf(() => CloseToTheNotificationArea), closeToTheNotificationArea ? 1 : 0);
+                        key.SetValue(Helper.NameOf(() => CompactMode), compactMode ? 1 : 0);
+                        key.SetValue(Helper.NameOf(() => CreateStartMenuShortcut), createStartMenuShortcut ? 1 : 0);
+                        key.SetValue(Helper.NameOf(() => FontSize), fontSize);
+                        key.SetValue(Helper.NameOf(() => Language), language);
+                        key.SetValue(Helper.NameOf(() => MemoryAreas), (int)memoryAreas);
+                        key.SetValue(Helper.NameOf(() => OptimizationKey), (int)optimizationKey);
+                        key.SetValue(Helper.NameOf(() => OptimizationModifiers), (int)optimizationModifiers);
+                        key.SetValue(Helper.NameOf(() => RunOnPriority), (int)runOnPriority);
+                        key.SetValue(Helper.NameOf(() => RunOnStartup), runOnStartup ? 1 : 0);
+                        key.SetValue(Helper.NameOf(() => ShowOptimizationNotifications), showOptimizationNotifications ? 1 : 0);
+                        key.SetValue(Helper.NameOf(() => ShowVirtualMemory), showVirtualMemory ? 1 : 0);
+                        key.SetValue(Helper.NameOf(() => StartMinimized), startMinimized ? 1 : 0);
+                        key.SetValue(Helper.NameOf(() => TrayIconBackgroundColor), trayIconBackgroundColor.GetHex(true));
+                        key.SetValue(Helper.NameOf(() => TrayIconDangerColor), trayIconDangerColor.GetHex(true));
+                        key.SetValue(Helper.NameOf(() => TrayIconDangerLevel), trayIconDangerLevel);
+                        key.SetValue(Helper.NameOf(() => TrayIconOptimizeOnMiddleMouseClick), trayIconOptimizeOnMiddleMouseClick ? 1 : 0);
+                        key.SetValue(Helper.NameOf(() => TrayIconOptimizingColor), trayIconOptimizingColor.GetHex(true));
+                        key.SetValue(Helper.NameOf(() => TrayIconShowMemoryUsage), trayIconShowMemoryUsage ? 1 : 0);
+                        key.SetValue(Helper.NameOf(() => TrayIconTextColor), trayIconTextColor.GetHex(true));
+                        key.SetValue(Helper.NameOf(() => TrayIconUseTransparentBackground), trayIconUseTransparentBackground ? 1 : 0);
+                        key.SetValue(Helper.NameOf(() => TrayIconWarningColor), trayIconWarningColor.GetHex(true));
+                        key.SetValue(Helper.NameOf(() => TrayIconWarningLevel), trayIconWarningLevel);
+                        key.SetValue(Helper.NameOf(() => UseHotkey), useHotkey ? 1 : 0);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Logger.Error(e);
+            }
+        }
+
         public static void Reset(bool keepLanguage = false)
         {
             var language = Language;
@@ -238,64 +408,7 @@ namespace WinMemoryCleaner
 
         public static void Save()
         {
-            try
-            {
-                // Process Exclusion List
-                Registry.LocalMachine.DeleteSubKey(Constants.App.Registry.Key.ProcessExclusionList, false);
-
-                if (ProcessExclusionList.Any())
-                {
-                    using (var key = Registry.LocalMachine.CreateSubKey(Constants.App.Registry.Key.ProcessExclusionList))
-                    {
-                        if (key != null)
-                        {
-                            foreach (var process in ProcessExclusionList)
-                                key.SetValue(process.RemoveWhitespaces().Replace(".exe", string.Empty).ToLower(_culture), string.Empty, RegistryValueKind.String);
-                        }
-                    }
-                }
-
-                // Settings
-                using (var key = Registry.LocalMachine.CreateSubKey(Constants.App.Registry.Key.Settings))
-                {
-                    if (key != null)
-                    {
-                        key.SetValue(Helper.NameOf(() => AlwaysOnTop), AlwaysOnTop ? 1 : 0);
-                        key.SetValue(Helper.NameOf(() => AutoOptimizationInterval), AutoOptimizationInterval);
-                        key.SetValue(Helper.NameOf(() => AutoOptimizationMemoryUsage), AutoOptimizationMemoryUsage);
-                        key.SetValue(Helper.NameOf(() => AutoUpdate), AutoUpdate ? 1 : 0);
-                        key.SetValue(Helper.NameOf(() => CloseAfterOptimization), CloseAfterOptimization ? 1 : 0);
-                        key.SetValue(Helper.NameOf(() => CloseToTheNotificationArea), CloseToTheNotificationArea ? 1 : 0);
-                        key.SetValue(Helper.NameOf(() => CompactMode), CompactMode ? 1 : 0);
-                        key.SetValue(Helper.NameOf(() => CreateStartMenuShortcut), CreateStartMenuShortcut ? 1 : 0);
-                        key.SetValue(Helper.NameOf(() => FontSize), FontSize);
-                        key.SetValue(Helper.NameOf(() => Language), Language);
-                        key.SetValue(Helper.NameOf(() => MemoryAreas), (int)MemoryAreas);
-                        key.SetValue(Helper.NameOf(() => OptimizationKey), (int)OptimizationKey);
-                        key.SetValue(Helper.NameOf(() => OptimizationModifiers), (int)OptimizationModifiers);
-                        key.SetValue(Helper.NameOf(() => RunOnPriority), (int)RunOnPriority);
-                        key.SetValue(Helper.NameOf(() => RunOnStartup), RunOnStartup ? 1 : 0);
-                        key.SetValue(Helper.NameOf(() => ShowOptimizationNotifications), ShowOptimizationNotifications ? 1 : 0);
-                        key.SetValue(Helper.NameOf(() => ShowVirtualMemory), ShowVirtualMemory ? 1 : 0);
-                        key.SetValue(Helper.NameOf(() => StartMinimized), StartMinimized ? 1 : 0);
-                        key.SetValue(Helper.NameOf(() => TrayIconBackgroundColor), TrayIconBackgroundColor.GetHex(true));
-                        key.SetValue(Helper.NameOf(() => TrayIconDangerColor), TrayIconDangerColor.GetHex(true));
-                        key.SetValue(Helper.NameOf(() => TrayIconDangerLevel), TrayIconDangerLevel);
-                        key.SetValue(Helper.NameOf(() => TrayIconOptimizeOnMiddleMouseClick), TrayIconOptimizeOnMiddleMouseClick ? 1 : 0);
-                        key.SetValue(Helper.NameOf(() => TrayIconOptimizingColor), TrayIconOptimizingColor.GetHex(true));
-                        key.SetValue(Helper.NameOf(() => TrayIconShowMemoryUsage), TrayIconShowMemoryUsage ? 1 : 0);
-                        key.SetValue(Helper.NameOf(() => TrayIconTextColor), TrayIconTextColor.GetHex(true));
-                        key.SetValue(Helper.NameOf(() => TrayIconUseTransparentBackground), TrayIconUseTransparentBackground ? 1 : 0);
-                        key.SetValue(Helper.NameOf(() => TrayIconWarningColor), TrayIconWarningColor.GetHex(true));
-                        key.SetValue(Helper.NameOf(() => TrayIconWarningLevel), TrayIconWarningLevel);
-                        key.SetValue(Helper.NameOf(() => UseHotkey), UseHotkey ? 1 : 0);
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                Logger.Error(e);
-            }
+            SaveInternal();
         }
 
         #endregion

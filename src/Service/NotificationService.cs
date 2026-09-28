@@ -22,6 +22,8 @@ namespace WinMemoryCleaner
         private int _currentRotationAngle;
         private Icon _currentIcon;
         private bool _disposed;
+        private string _lastIconStateKey;
+        private string _lastText;
         private readonly Icon _imageIcon;
         private readonly NotifyIcon _notifyIcon;
         private readonly object _disposeLock = new object();
@@ -249,6 +251,50 @@ namespace WinMemoryCleaner
             catch
             {
                 return _imageIcon;
+            }
+        }
+
+        /// <summary>
+        /// Builds a state key covering every input that affects the rendered tray icon,
+        /// so unchanged states skip the GDI+ re-render entirely
+        /// </summary>
+        /// <param name="memory">The memory information</param>
+        /// <param name="isOptimizing">if set to <c>true</c> the system is optimizing</param>
+        /// <returns>A string that is equal iff the icon would render identically; null to force a re-render</returns>
+        private string GetIconStateKey(Memory memory, bool isOptimizing)
+        {
+            try
+            {
+                var usedPercentage = memory.Physical.Used.Percentage;
+                var virtualPercentage = Settings.ShowVirtualMemory ? memory.Virtual.Used.Percentage : -1;
+
+                var backgroundBrush = Settings.TrayIconBackgroundColor as SolidBrush;
+                var textBrush = Settings.TrayIconTextColor as SolidBrush;
+                var optimizingBrush = Settings.TrayIconOptimizingColor as SolidBrush;
+                var dangerBrush = Settings.TrayIconDangerColor as SolidBrush;
+                var warningBrush = Settings.TrayIconWarningColor as SolidBrush;
+
+                return string.Format
+                (
+                    CultureInfo.InvariantCulture,
+                    "{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}",
+                    usedPercentage,
+                    virtualPercentage,
+                    isOptimizing,
+                    Settings.TrayIconShowMemoryUsage,
+                    Settings.TrayIconUseTransparentBackground,
+                    Settings.TrayIconDangerLevel,
+                    Settings.TrayIconWarningLevel,
+                    Settings.TrayIconUseTransparentBackground ? Color.Transparent.ToArgb() : backgroundBrush.Color.ToArgb(),
+                    textBrush.Color.ToArgb(),
+                    optimizingBrush.Color.ToArgb(),
+                    dangerBrush.Color.ToArgb() + "|" + warningBrush.Color.ToArgb()
+                );
+            }
+            catch
+            {
+                // Fingerprinting failed - force a re-render next time
+                return null;
             }
         }
 
@@ -578,7 +624,9 @@ namespace WinMemoryCleaner
                     {
                         _currentRotationAngle = 0;
 
-                        _rotationTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+                        // 500 ms: users cannot perceive faster rotation on a 16x16 tray glyph,
+                        // and each tick is a full GDI+ re-render on the UI thread
+                        _rotationTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
                         _rotationTimer.Tick += OnRotationTimerTick;
                         _rotationTimer.Start();
                     }
@@ -639,7 +687,14 @@ namespace WinMemoryCleaner
 
                 try
                 {
-                    _notifyIcon.Text = GetText(memory, isOptimizing);
+                    // Skip redundant re-render when nothing that affects icon or text has changed
+                    var text = GetText(memory, isOptimizing);
+                    var iconStateKey = GetIconStateKey(memory, isOptimizing);
+
+                    if (iconStateKey == _lastIconStateKey && text == _lastText)
+                        return;
+
+                    _notifyIcon.Text = text;
 
                     var newIcon = GetIcon(memory, isOptimizing);
                     var oldIcon = _currentIcon;
@@ -658,6 +713,9 @@ namespace WinMemoryCleaner
                             // ignored
                         }
                     }
+
+                    _lastIconStateKey = iconStateKey;
+                    _lastText = text;
                 }
                 catch (ObjectDisposedException)
                 {

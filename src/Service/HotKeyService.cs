@@ -17,6 +17,7 @@ namespace WinMemoryCleaner
 
         private readonly bool _isSupported = Environment.OSVersion.Version.Major >= 6; // Minimum supported Windows Vista / Server 2003
         private readonly Dictionary<Hotkey, Action> _registered = new Dictionary<Hotkey, Action>();
+        private static readonly Regex KeyNameFilter = new Regex("^([A-Z]|F([1-9]|1[0-2]))$", RegexOptions.IgnoreCase); // (A-Z) (F1-F12)
 
         #endregion
 
@@ -34,8 +35,7 @@ namespace WinMemoryCleaner
             (
                 Enum.GetValues(typeof(Key))
                     .Cast<Key>()
-                    .Where(key => new Regex("^([A-Z]|F([1-9]|1[0-2]))$", RegexOptions.IgnoreCase) // (A-Z) (F1-F12)
-                    .Match(key.ToString().ToUpper(Localizer.Culture)).Success)
+                    .Where(key => KeyNameFilter.Match(key.ToString().ToUpper(Localizer.Culture)).Success)
             );
 
             Modifiers = new Dictionary<ModifierKeys, string>

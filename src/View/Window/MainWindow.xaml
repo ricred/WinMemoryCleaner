@@ -234,7 +234,7 @@
                             <Slider IsSnapToTickEnabled="True"
                                     Maximum="18"
                                     Minimum="12"
-                                    Name="FontSizeSlider"
+                                    x:Name="FontSizeSlider"
                                     TickFrequency="1"
                                     Value="{Binding FontSize}"
                                     VerticalAlignment="Center"
@@ -535,7 +535,7 @@
                                           VerticalAlignment="Stretch"
                                           VerticalScrollBarVisibility="Auto">
                                 <ItemsControl ItemsSource="{Binding ProcessExclusionList}"
-                                              Name="ProcessExclusionList"
+                                              x:Name="ProcessExclusionList"
                                               VerticalAlignment="Top">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
@@ -568,7 +568,7 @@
                                       ItemsSource="{Binding Processes}" 
                                       Margin="0, 5, 0, 0"
                                       MouseRightButtonUp="OnComboBoxMouseRightButtonUp"
-                                      Name="Processes"
+                                      x:Name="Processes"
                                       SelectedValue="{Binding SelectedProcess}"
                                       VerticalAlignment="Center" />
                             <Button Content="+"
@@ -594,7 +594,7 @@
                                         Margin="0, 10, 0, 9"
                                         Maximum="168"
                                         Minimum="0"
-                                        Name="AutoOptimizationIntervalSlider" 
+                                        x:Name="AutoOptimizationIntervalSlider" 
                                         TickFrequency="1"
                                         Value="{Binding AutoOptimizationInterval}"
                                         VerticalAlignment="Center" />
@@ -605,7 +605,7 @@
                                         Margin="0, 10, 0, 0"
                                         Maximum="100"
                                         Minimum="0"
-                                        Name="AutoOptimizationMemoryUsageSlider"
+                                        x:Name="AutoOptimizationMemoryUsageSlider"
                                         TickFrequency="1"
                                         ToolTip="{Binding AutoOptimizationMemoryUsageWarning}"
                                         Value="{Binding AutoOptimizationMemoryUsage}"
@@ -851,7 +851,7 @@
                         Grid.Row="2"
                         KeyboardNavigation.TabIndex="0"
                         Margin="0, 10, 0, 0"
-                        Name="Optimize"
+                        x:Name="Optimize"
                         Padding="10, 5, 10, 5"
                         Style="{StaticResource ButtonWithFocusFadeStyle}"
                         TabIndex="0"

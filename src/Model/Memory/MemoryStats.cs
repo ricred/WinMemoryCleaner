@@ -3,8 +3,10 @@
     /// <summary>
     /// Memory Stats
     /// </summary>
-    public class MemoryStats
+    public class MemoryStats : ObservableObject
     {
+        #region Constructors
+
         /// <summary>
         /// Initializes a new instance of the <see cref="MemoryStats" /> class.
         /// </summary>
@@ -17,12 +19,12 @@
             Total = new MemorySize(total);
             Used = new MemorySize(total >= free ? total - free : free - total);
 
-            if (used == null)
-                used = Used.Value > 0 && Total.Value > 0 ? (int)(Used.Value * 100 / Total.Value) : 0;
-
-            Free.Percentage = (int)(100 - used);
-            Used.Percentage = (int)used;
+            ApplyPercentages(total, used);
         }
+
+        #endregion
+
+        #region Properties
 
         /// <summary>
         /// Gets or sets the free memory.
@@ -47,6 +49,40 @@
         /// The used memory.
         /// </value>
         public MemorySize Used { get; private set; }
+
+        #endregion
+
+        #region Methods
+
+        private void ApplyPercentages(long total, int? used)
+        {
+            if (used == null)
+                used = Used.Bytes > 0 && total > 0 ? (int)(Used.Bytes * 100 / total) : 0;
+
+            Free.Percentage = (int)(100 - used);
+            Used.Percentage = (int)used;
+        }
+
+        /// <summary>
+        /// Updates the stats in place, raising change notifications only when a value actually changed.
+        /// This avoids per-tick allocations when monitoring memory.
+        /// </summary>
+        /// <param name="free">The amount of memory currently available</param>
+        /// <param name="total">The amount of actual memory</param>
+        /// <param name="used">A number between 0 and 100 that specifies the approximate amount of memory that is in use</param>
+        internal void Update(long free, long total, int? used = null)
+        {
+            if (Free.Bytes == free && Total.Bytes == total)
+                return;
+
+            Free.Update(free);
+            Total.Update(total);
+            Used.Update(total >= free ? total - free : free - total);
+
+            ApplyPercentages(total, used);
+        }
+
+        #endregion
 
         /// <summary>
         /// Converts to string.

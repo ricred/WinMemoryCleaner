@@ -19,6 +19,20 @@ namespace WinMemoryCleaner
 
         internal static ProcessStartInfo Process;
 
+        private static void EnsureClient()
+        {
+            if (_client != null)
+                return;
+
+            _client = new WebClient();
+            _client.DownloadFileCompleted += new AsyncCompletedEventHandler(OnFileDownloadCompleted);
+            _client.DownloadStringCompleted += new DownloadStringCompletedEventHandler(OnVersionCheckCompleted);
+
+            ServicePointManager.DefaultConnectionLimit = 10;
+            ServicePointManager.Expect100Continue = true;
+            ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072 | (SecurityProtocolType)12288; // TLS 1.2 | TLS 1.3
+        }
+
         private static void OnFileDownloadCompleted(object sender, AsyncCompletedEventArgs e)
         {
             try
@@ -104,16 +118,7 @@ namespace WinMemoryCleaner
 
         private static void Reset()
         {
-            try
-            {
-                if (_client != null)
-                    _client.Dispose();
-            }
-            finally
-            {
-                _client = null;
-            }
-
+            // Keep the shared client (it is reused across checks); only clear the pending update process
             try
             {
                 if (Process != null)
@@ -132,28 +137,19 @@ namespace WinMemoryCleaner
         {
             try
             {
-                if (Settings.AutoUpdate && DateTimeOffset.Now.Subtract(_lastCheck).TotalHours < Constants.App.AutoUpdateInterval)
+                // Skip when updates are disabled, or when the last check is more recent than the update interval
+                if (!Settings.AutoUpdate || DateTimeOffset.Now.Subtract(_lastCheck).TotalHours < Constants.App.AutoUpdateInterval)
                     return;
 
                 _lastCheck = DateTimeOffset.Now;
 
-                Reset();
-
-                _client = new WebClient();
-                _client.DownloadFileCompleted += new AsyncCompletedEventHandler(OnFileDownloadCompleted);
-                _client.DownloadStringCompleted += new DownloadStringCompletedEventHandler(OnVersionCheckCompleted);
-
-                ServicePointManager.DefaultConnectionLimit = 10;
-                ServicePointManager.Expect100Continue = true;
-                ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072 | (SecurityProtocolType)12288; // TLS 1.2 | TLS 1.3
+                EnsureClient();
 
                 _client.DownloadStringAsync(Constants.App.Repository.AssemblyInfoUri, args);
             }
             catch (Exception ex)
             {
                 Logger.Error(ex);
-
-                Reset();
             }
         }
     }

@@ -17,6 +17,7 @@ namespace WinMemoryCleaner
     {
         #region Fields
 
+        private readonly object _memoryLock = new object();
         private Memory _memory = new Memory(new Structs.Windows.MemoryStatusEx());
         private OperatingSystem _operatingSystem;
 
@@ -25,27 +26,31 @@ namespace WinMemoryCleaner
         #region Properties
 
         /// <summary>
-        /// Gets the memory info (RAM)
+        /// Gets the memory info (RAM). Refreshes the existing instance in place,
+        /// so repeated reads do not allocate a new object graph per tick.
         /// </summary>
         public Memory Memory
         {
             get
             {
-                try
+                lock (_memoryLock)
                 {
-                    var memoryStatusEx = new Structs.Windows.MemoryStatusEx();
+                    try
+                    {
+                        var memoryStatusEx = new Structs.Windows.MemoryStatusEx();
 
-                    if (!NativeMethods.GlobalMemoryStatusEx(memoryStatusEx))
-                        Logger.Error(new Win32Exception(Marshal.GetLastWin32Error()));
+                        if (!NativeMethods.GlobalMemoryStatusEx(memoryStatusEx))
+                            Logger.Error(new Win32Exception(Marshal.GetLastWin32Error()));
 
-                    _memory = new Memory(memoryStatusEx);
+                        _memory.Update(memoryStatusEx);
+                    }
+                    catch (Exception e)
+                    {
+                        Logger.Error(e);
+                    }
+
+                    return _memory;
                 }
-                catch (Exception e)
-                {
-                    Logger.Error(e);
-                }
-
-                return _memory;
             }
         }
 
@@ -721,7 +726,11 @@ namespace WinMemoryCleaner
                 if (!SetIncreasePrivilege(Constants.Windows.Privilege.SeDebugName))
                     throw new Exception(string.Format(Localizer.Culture, Localizer.String.ErrorAdminPrivilegeRequired, Constants.Windows.Privilege.SeDebugName));
 
-                var processes = Process.GetProcesses().Where(process => process != null && !Settings.ProcessExclusionList.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase));
+                // Use ToList() to force immediate enumeration and ensure proper disposal of all process handles
+                // This prevents handle leaks that can accumulate after multiple optimization cycles
+                var processes = Process.GetProcesses()
+                    .Where(process => process != null && !Settings.ProcessExclusionList.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase))
+                    .ToList();
 
                 foreach (var process in processes)
                 {

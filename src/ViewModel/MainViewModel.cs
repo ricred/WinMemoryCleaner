@@ -23,6 +23,10 @@ namespace WinMemoryCleaner
         private Computer _computer;
         private readonly IComputerService _computerService;
         private readonly IHotkeyService _hotKeyService;
+        private int _monitorAppRunning;
+        private Timer _monitorAppTimer;
+        private int _monitorComputerRunning;
+        private Timer _monitorComputerTimer;
         private bool _isOptimizationKeyValid;
         private bool _isOptimizationRunning;
         private bool _isReiniziliating;
@@ -35,6 +39,16 @@ namespace WinMemoryCleaner
         private byte _optimizationProgressValue = byte.MinValue;
         private string _selectedProcess;
         private ObservableCollection<ObservableItem<bool>> _trayIconItems;
+
+        /// <summary>
+        /// Monitor App interval: 60 seconds
+        /// </summary>
+        private const int MonitorAppIntervalMilliseconds = 60000;
+
+        /// <summary>
+        /// Monitor Computer interval: 5 seconds
+        /// </summary>
+        private const int MonitorComputerIntervalMilliseconds = 5000;
 
         #endregion
 
@@ -109,7 +123,7 @@ namespace WinMemoryCleaner
                     IsBusy = true;
 
                     Settings.AlwaysOnTop = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     RaisePropertyChanged();
                 }
@@ -138,7 +152,7 @@ namespace WinMemoryCleaner
                     _lastAutoOptimizationByInterval = DateTimeOffset.Now;
 
                     Settings.AutoOptimizationInterval = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     RaisePropertyChanged();
                     RaisePropertyChanged(() => AutoOptimizationMemoryIntervalDescription);
@@ -168,7 +182,7 @@ namespace WinMemoryCleaner
                     _lastAutoOptimizationByMemoryUsage = DateTimeOffset.Now;
 
                     Settings.AutoOptimizationMemoryUsage = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     RaisePropertyChanged();
                     RaisePropertyChanged(() => AutoOptimizationMemoryUsageDescription);
@@ -229,7 +243,7 @@ namespace WinMemoryCleaner
                     IsBusy = true;
 
                     Settings.AutoUpdate = Helper.IsAutoUpdateSupported && value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     RaisePropertyChanged();
                 }
@@ -303,7 +317,7 @@ namespace WinMemoryCleaner
                     IsBusy = true;
 
                     Settings.CloseAfterOptimization = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     RaisePropertyChanged();
                 }
@@ -330,7 +344,7 @@ namespace WinMemoryCleaner
                     IsBusy = true;
 
                     Settings.CloseToTheNotificationArea = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     RaisePropertyChanged();
                 }
@@ -357,7 +371,7 @@ namespace WinMemoryCleaner
                     IsBusy = true;
 
                     Settings.CompactMode = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     RaisePropertyChanged();
                     RaisePropertyChanged(() => Title);
@@ -387,7 +401,7 @@ namespace WinMemoryCleaner
                     IsBusy = true;
 
                     Settings.CreateStartMenuShortcut = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     Helper.StartMenuShortcut(value);
 
@@ -432,7 +446,7 @@ namespace WinMemoryCleaner
                     IsBusy = true;
 
                     Settings.FontSize = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                 if (WpfApplication.Current != null)
                 {
@@ -664,7 +678,7 @@ namespace WinMemoryCleaner
                             break;
                     }
 
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     RaisePropertyChanged();
                     RaisePropertyChanged(() => CanOptimize);
@@ -818,18 +832,44 @@ namespace WinMemoryCleaner
         {
             get
             {
-                var processes = new ObservableCollection<string>(Process.GetProcesses()
-                    .Where(process => process != null && !process.ProcessName.Equals(Constants.App.Name) && !Settings.ProcessExclusionList.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase))
-                    .Select(process => process.ProcessName.ToLower(Localizer.Culture).Replace(".exe", string.Empty))
-                    .Distinct()
-                    .OrderBy(name => name));
+                // Properly enumerate and dispose Process handles to prevent memory leaks
+                // Process.GetProcesses() returns native handles that must be explicitly released
+                var processNames = new List<string>();
 
-                if (!processes.Contains(SelectedProcess, StringComparer.OrdinalIgnoreCase))
-                    SelectedProcess = processes.FirstOrDefault();
+                foreach (var process in Process.GetProcesses())
+                {
+                    if (process == null)
+                        continue;
 
-                return processes;
+                    if (process.ProcessName.Equals(Constants.App.Name))
+                        continue;
+
+                    if (Settings.ProcessExclusionList.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase))
+                    {
+                        try { process.Dispose(); } catch { }
+                        continue;
+                    }
+
+                    try
+                    {
+                        processNames.Add(process.ProcessName.ToLower(Localizer.Culture).Replace(".exe", string.Empty));
+                    }
+                    finally
+                    {
+                        // Ensure process handle is closed to prevent leaks
+                        try { process.Dispose(); } catch { }
+                    }
+                }
+
+                var result = new ObservableCollection<string>(processNames.Distinct().OrderBy(name => name));
+
+                if (!result.Contains(SelectedProcess, StringComparer.OrdinalIgnoreCase))
+                    SelectedProcess = result.FirstOrDefault();
+
+                return result;
             }
         }
+
 
         /// <summary>
         /// Gets or sets the process exclusion list.
@@ -862,7 +902,7 @@ namespace WinMemoryCleaner
                     App.SetPriority(priority);
 
                     Settings.RunOnPriority = priority;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     RaisePropertyChanged();
                 }
@@ -891,7 +931,7 @@ namespace WinMemoryCleaner
                     App.RunOnStartup(value);
 
                     Settings.RunOnStartup = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     RaisePropertyChanged();
                 }
@@ -964,7 +1004,7 @@ namespace WinMemoryCleaner
                     IsBusy = true;
 
                     Settings.ShowOptimizationNotifications = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     RaisePropertyChanged();
                 }
@@ -991,7 +1031,7 @@ namespace WinMemoryCleaner
                     IsBusy = true;
 
                     Settings.ShowVirtualMemory = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     NotificationService.Update(Computer.Memory, IsOptimizationRunning);
 
@@ -1020,7 +1060,7 @@ namespace WinMemoryCleaner
                     IsBusy = true;
 
                     Settings.StartMinimized = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     RaisePropertyChanged();
                 }
@@ -1047,7 +1087,7 @@ namespace WinMemoryCleaner
                     IsBusy = true;
 
                     Settings.UseHotkey = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     if (value)
                         RegisterOptimizationHotkey(Settings.OptimizationModifiers, Settings.OptimizationKey);
@@ -1107,7 +1147,7 @@ namespace WinMemoryCleaner
                     return;
 
                 Settings.TrayIconBackgroundColor = value.ToBrush();
-                Settings.Save();
+                Settings.SaveAsync();
 
                 NotificationService.Update(Computer.Memory, IsOptimizationRunning);
 
@@ -1143,7 +1183,7 @@ namespace WinMemoryCleaner
                     return;
 
                 Settings.TrayIconDangerColor = value.ToBrush();
-                Settings.Save();
+                Settings.SaveAsync();
 
                 NotificationService.Update(Computer.Memory, IsOptimizationRunning);
 
@@ -1167,7 +1207,7 @@ namespace WinMemoryCleaner
                     IsBusy = true;
 
                     Settings.TrayIconDangerLevel = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     NotificationService.Update(Computer.Memory, IsOptimizationRunning);
 
@@ -1196,7 +1236,7 @@ namespace WinMemoryCleaner
                     IsBusy = true;
 
                     Settings.TrayIconOptimizeOnMiddleMouseClick = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     RaisePropertyChanged();
                 }
@@ -1235,7 +1275,7 @@ namespace WinMemoryCleaner
                     return;
 
                 Settings.TrayIconOptimizingColor = value.ToBrush();
-                Settings.Save();
+                Settings.SaveAsync();
 
                 NotificationService.Update(Computer.Memory, IsOptimizationRunning);
 
@@ -1285,7 +1325,7 @@ namespace WinMemoryCleaner
                     IsBusy = true;
 
                     Settings.TrayIconShowMemoryUsage = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     NotificationService.Update(Computer.Memory, IsOptimizationRunning);
 
@@ -1331,7 +1371,7 @@ namespace WinMemoryCleaner
                     return;
 
                 Settings.TrayIconTextColor = value.ToBrush();
-                Settings.Save();
+                Settings.SaveAsync();
 
                 NotificationService.Update(Computer.Memory, IsOptimizationRunning);
 
@@ -1355,7 +1395,7 @@ namespace WinMemoryCleaner
                     IsBusy = true;
 
                     Settings.TrayIconUseTransparentBackground = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     NotificationService.Update(Computer.Memory, IsOptimizationRunning);
 
@@ -1396,7 +1436,7 @@ namespace WinMemoryCleaner
                     return;
 
                 Settings.TrayIconWarningColor = value.ToBrush();
-                Settings.Save();
+                Settings.SaveAsync();
 
                 NotificationService.Update(Computer.Memory, IsOptimizationRunning);
 
@@ -1420,7 +1460,7 @@ namespace WinMemoryCleaner
                     IsBusy = true;
 
                     Settings.TrayIconWarningLevel = value;
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                     NotificationService.Update(Computer.Memory, IsOptimizationRunning);
 
@@ -1465,6 +1505,35 @@ namespace WinMemoryCleaner
         {
             if (disposing)
             {
+                // Stop the monitor timers before cancelling the token, so no tick is re-armed after disposal
+                if (_monitorAppTimer != null)
+                {
+                    try
+                    {
+                        _monitorAppTimer.Dispose();
+                    }
+                    catch
+                    {
+                        // ignored
+                    }
+
+                    _monitorAppTimer = null;
+                }
+
+                if (_monitorComputerTimer != null)
+                {
+                    try
+                    {
+                        _monitorComputerTimer.Dispose();
+                    }
+                    catch
+                    {
+                        // ignored
+                    }
+
+                    _monitorComputerTimer = null;
+                }
+
                 if (_cancellationTokenSource != null)
                 {
                     try
@@ -1587,7 +1656,7 @@ namespace WinMemoryCleaner
                 {
                     if (Settings.ProcessExclusionList.Add(process))
                     {
-                        Settings.Save();
+                        Settings.SaveAsync();
 
                         RaisePropertyChanged(() => Processes);
                         RaisePropertyChanged(() => ProcessExclusionList);
@@ -1609,22 +1678,36 @@ namespace WinMemoryCleaner
         }
 
         /// <summary>
-        /// Monitor App Resources
+        /// Monitor App Resources. Runs the work as one-shot timer ticks that are
+        /// re-armed at the end of each tick: ticks never overlap, never spin-wait,
+        /// and no thread is held hostage by a polling loop.
         /// </summary>
         private void MonitorApp()
         {
-            while (!_cancellationTokenSource.Token.IsCancellationRequested)
+            // First tick fires after the interval (wait-then-work, matching the previous loop cadence),
+            // following ticks every MonitorAppIntervalMilliseconds
+            _monitorAppTimer = new Timer(OnMonitorAppTimerTick, null, MonitorAppIntervalMilliseconds, Timeout.Infinite);
+        }
+
+        /// <summary>
+        /// Timer callback for Monitor App Resources
+        /// </summary>
+        /// <param name="state">Timer state (unused)</param>
+        private void OnMonitorAppTimerTick(object state)
+        {
+            var timer = _monitorAppTimer;
+
+            // Reentrancy guard
+            if (Interlocked.Exchange(ref _monitorAppRunning, 1) == 1)
             {
-                try
+                try { if (timer != null) timer.Change(MonitorAppIntervalMilliseconds, Timeout.Infinite); } catch { }
+                return;
+            }
+
+            try
+            {
+                if (!_cancellationTokenSource.Token.IsCancellationRequested && !IsBusy)
                 {
-                    // Check if it's busy
-                    if (IsBusy)
-                        continue;
-
-                    // Delay
-                    if (_cancellationTokenSource.Token.WaitHandle.WaitOne(60000))
-                        break;
-
                     // Update app
                     Updater.Update();
 
@@ -1643,7 +1726,6 @@ namespace WinMemoryCleaner
                                 OptimizeAsync(Enums.Memory.Optimization.Reason.Schedule);
 
                                 _lastAutoOptimizationByInterval = DateTimeOffset.Now;
-                                continue;
                             }
 
                             // Memory usage
@@ -1654,14 +1736,28 @@ namespace WinMemoryCleaner
                                 OptimizeAsync(Enums.Memory.Optimization.Reason.LowMemory);
 
                                 _lastAutoOptimizationByMemoryUsage = DateTimeOffset.Now;
-                                continue;
                             }
                         }
                     }
                 }
-                catch (Exception e)
+            }
+            catch (Exception e)
+            {
+                Logger.Debug(e);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _monitorAppRunning, 0);
+
+                // Re-arm: schedule the next tick only when not shutting down.
+                // ObjectDisposedException means the view model (or the token source) is gone - stop the timer.
+                try
                 {
-                    Logger.Debug(e);
+                    if (!_cancellationTokenSource.Token.IsCancellationRequested && timer != null)
+                        timer.Change(MonitorAppIntervalMilliseconds, Timeout.Infinite);
+                }
+                catch (ObjectDisposedException)
+                {
                 }
             }
         }
@@ -1671,61 +1767,79 @@ namespace WinMemoryCleaner
         /// </summary>
         private void MonitorAsync()
         {
-            // Monitor App Resources
-            try
-            {
-                ThreadPool.QueueUserWorkItem(_ => MonitorApp());
-            }
-            catch (Exception e)
-            {
-                Logger.Error(e);
-            }
-
-            // Monitor Computer Resources
-            try
-            {
-                ThreadPool.QueueUserWorkItem(_ => MonitorComputer());
-            }
-            catch (Exception e)
-            {
-                Logger.Error(e);
-            }
+            MonitorApp();
+            MonitorComputer();
         }
 
         /// <summary>
-        /// Monitor Computer Resources
+        /// Monitor Computer Resources. Runs the work as one-shot timer ticks that are
+        /// re-armed at the end of each tick: ticks never overlap, never spin-wait,
+        /// and no thread is held hostage by a polling loop.
         /// </summary>
         private void MonitorComputer()
         {
-            // App priority
-            App.SetPriority(Settings.RunOnPriority);
+            // First tick fires immediately, following ticks every MonitorComputerIntervalMilliseconds
+            _monitorComputerTimer = new Timer(OnMonitorComputerTimerTick, null, 0, Timeout.Infinite);
+        }
 
-            while (!_cancellationTokenSource.Token.IsCancellationRequested)
+        /// <summary>
+        /// Timer callback for Monitor Computer Resources
+        /// </summary>
+        /// <param name="state">Timer state (unused)</param>
+        private void OnMonitorComputerTimerTick(object state)
+        {
+            var timer = _monitorComputerTimer;
+
+            // Reentrancy guard
+            if (Interlocked.Exchange(ref _monitorComputerRunning, 1) == 1)
             {
+                try { if (timer != null) timer.Change(MonitorComputerIntervalMilliseconds, Timeout.Infinite); } catch { }
+                return;
+            }
+
+            try
+            {
+                if (_cancellationTokenSource.Token.IsCancellationRequested)
+                    return;
+
+                // Get memory info under lock but update UI outside lock
+                // This prevents deadlock when Optimize() tries to update UI
+                Memory newMemory = null;
+                bool isOptimizing = false;
+
+                lock (_lockObject)
+                {
+                    // Update memory info (refreshes in place, no per-tick allocations)
+                    newMemory = _computerService.Memory;
+                    isOptimizing = IsOptimizationRunning;
+                }
+
+                // Update UI OUTSIDE the lock to prevent deadlock
+                if (newMemory != null)
+                {
+                    Computer.Memory = newMemory;
+                    RaisePropertyChanged(() => Computer);
+                    RaisePropertyChanged(() => VirtualMemoryHeader);
+                    NotificationService.Update(newMemory, isOptimizing);
+                }
+            }
+            catch (Exception e)
+            {
+                Logger.Debug(e);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _monitorComputerRunning, 0);
+
+                // Re-arm: schedule the next tick only when not shutting down.
+                // ObjectDisposedException means the view model (or the token source) is gone - stop the timer.
                 try
                 {
-                    // Check if it's busy
-                    if (IsBusy)
-                        continue;
-
-                    lock (_lockObject)
-                    {
-                        // Update memory info
-                        Computer.Memory = _computerService.Memory;
-
-                        RaisePropertyChanged(() => Computer);
-                        RaisePropertyChanged(() => VirtualMemoryHeader);
-
-                        NotificationService.Update(Computer.Memory, IsOptimizationRunning);
-                    }
-
-                    // Delay
-                    if (_cancellationTokenSource.Token.WaitHandle.WaitOne(5000))
-                        break;
+                    if (!_cancellationTokenSource.Token.IsCancellationRequested && timer != null)
+                        timer.Change(MonitorComputerIntervalMilliseconds, Timeout.Infinite);
                 }
-                catch (Exception e)
+                catch (ObjectDisposedException)
                 {
-                    Logger.Debug(e);
                 }
             }
         }
@@ -1748,64 +1862,80 @@ namespace WinMemoryCleaner
         /// <param name="reason">Optimization reason</param>
         private void Optimize(Enums.Memory.Optimization.Reason reason)
         {
+            // Set busy state under lock but run optimization outside lock
+            // This prevents MonitorComputer thread from being blocked
             lock (_lockObject)
             {
-                try
+                IsBusy = true;
+                IsOptimizationRunning = true;
+            }
+
+            Memory updatedMemory = null;
+            string notificationMessage = null;
+
+            try
+            {
+                // App priority
+                App.SetPriority(Settings.RunOnPriority);
+
+                // Memory optimize - run OUTSIDE the lock to prevent blocking monitor thread
+                var tempPhysicalAvailable = Computer.Memory.Physical.Free.Bytes;
+                var tempVirtualAvailable = Computer.Memory.Virtual.Free.Bytes;
+
+                _computerService.Optimize(reason, Settings.MemoryAreas);
+
+                // Update memory info
+                updatedMemory = _computerService.Memory;
+
+                // Notification
+                if (Settings.ShowOptimizationNotifications)
                 {
-                    IsBusy = true;
-                    IsOptimizationRunning = true;
+                    var physicalReleased = (updatedMemory.Physical.Free.Bytes > tempPhysicalAvailable ? updatedMemory.Physical.Free.Bytes - tempPhysicalAvailable : tempPhysicalAvailable - updatedMemory.Physical.Free.Bytes).ToMemoryUnit();
+                    var virtualReleased = (updatedMemory.Virtual.Free.Bytes > tempVirtualAvailable ? updatedMemory.Virtual.Free.Bytes - tempVirtualAvailable : tempVirtualAvailable - updatedMemory.Virtual.Free.Bytes).ToMemoryUnit();
 
-                    NotificationService.Update(Computer.Memory, IsOptimizationRunning);
-
-                    // App priority
-                    App.SetPriority(Settings.RunOnPriority);
-
-                    // Memory optimize
-                    var tempPhysicalAvailable = Computer.Memory.Physical.Free.Bytes;
-                    var tempVirtualAvailable = Computer.Memory.Virtual.Free.Bytes;
-
-                    _computerService.Optimize(reason, Settings.MemoryAreas);
-
-                    // Update memory info
-                    Computer.Memory = _computerService.Memory;
-                    RaisePropertyChanged(() => Computer);
-
-                    // Notification
-                    if (Settings.ShowOptimizationNotifications)
-                    {
-                        var physicalReleased = (Computer.Memory.Physical.Free.Bytes > tempPhysicalAvailable ? Computer.Memory.Physical.Free.Bytes - tempPhysicalAvailable : tempPhysicalAvailable - Computer.Memory.Physical.Free.Bytes).ToMemoryUnit();
-                        var virtualReleased = (Computer.Memory.Virtual.Free.Bytes > tempVirtualAvailable ? Computer.Memory.Virtual.Free.Bytes - tempVirtualAvailable : tempVirtualAvailable - Computer.Memory.Virtual.Free.Bytes).ToMemoryUnit();
-
-                        var message = Settings.ShowVirtualMemory
-                            ? string.Format(Localizer.Culture, "{1}{0}{0}{2}: {3}{0}{4}: {5:0.#} {6}{0}{7}: {8:0.#} {9}", Environment.NewLine, Localizer.String.MemoryOptimized.ToUpper(Localizer.Culture), Localizer.String.Reason, reason.GetString(), Localizer.String.PhysicalMemory, physicalReleased.Key, physicalReleased.Value, Localizer.String.VirtualMemory, virtualReleased.Key, virtualReleased.Value)
-                            : string.Format(Localizer.Culture, "{1}{0}{0}{2}: {3}{0}{4}: {5:0.#} {6}", Environment.NewLine, Localizer.String.MemoryOptimized.ToUpper(Localizer.Culture), Localizer.String.Reason, reason.GetString(), Localizer.String.PhysicalMemory, physicalReleased.Key, physicalReleased.Value);
-
-                        Notify(message);
-                    }
+                    notificationMessage = Settings.ShowVirtualMemory
+                        ? string.Format(Localizer.Culture, "{1}{0}{0}{2}: {3}{0}{4}: {5:0.#} {6}{0}{7}: {8:0.#} {9}", Environment.NewLine, Localizer.String.MemoryOptimized.ToUpper(Localizer.Culture), Localizer.String.Reason, reason.GetString(), Localizer.String.PhysicalMemory, physicalReleased.Key, physicalReleased.Value, Localizer.String.VirtualMemory, virtualReleased.Key, virtualReleased.Value)
+                        : string.Format(Localizer.Culture, "{1}{0}{0}{2}: {3}{0}{4}: {5:0.#} {6}", Environment.NewLine, Localizer.String.MemoryOptimized.ToUpper(Localizer.Culture), Localizer.String.Reason, reason.GetString(), Localizer.String.PhysicalMemory, physicalReleased.Key, physicalReleased.Value);
                 }
-                finally
+            }
+            finally
+            {
+                lock (_lockObject)
                 {
                     IsOptimizationRunning = false;
                     IsBusy = false;
+                }
 
-                    NotificationService.Update(Computer.Memory, IsOptimizationRunning);
+                // Update UI and notification outside of lock to prevent deadlock
+                if (updatedMemory != null)
+                {
+                    Computer.Memory = updatedMemory;
+                    RaisePropertyChanged(() => Computer);
+                }
 
-                    // Raise the event after IsOptimizationRunning is set to false
-                    // Use BeginInvoke to ensure it runs after all property changes propagate
+                NotificationService.Update(Computer.Memory, false);
+
+                // Send notification outside lock
+                if (notificationMessage != null)
+                {
+                    Notify(notificationMessage);
+                }
+
+                // Raise the event after IsOptimizationRunning is set to false
+                // Use BeginInvoke to ensure it runs after all property changes propagate
+                WpfApplication.Current.Dispatcher.BeginInvoke((Action)(() =>
+                {
+                    // Force command manager to re-evaluate CanExecute on all commands
+                    CommandManager.InvalidateRequerySuggested();
+                }), System.Windows.Threading.DispatcherPriority.Normal);
+
+                // Raise completion event with lower priority to ensure commands are refreshed first
+                if (OnOptimizeCommandCompleted != null)
+                {
                     WpfApplication.Current.Dispatcher.BeginInvoke((Action)(() =>
                     {
-                        // Force command manager to re-evaluate CanExecute on all commands
-                        CommandManager.InvalidateRequerySuggested();
-                    }), System.Windows.Threading.DispatcherPriority.Normal);
-
-                    // Raise completion event with lower priority to ensure commands are refreshed first
-                    if (OnOptimizeCommandCompleted != null)
-                    {
-                        WpfApplication.Current.Dispatcher.BeginInvoke((Action)(() =>
-                         {
-                             OnOptimizeCommandCompleted();
-                         }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-                    }
+                        OnOptimizeCommandCompleted();
+                    }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
                 }
             }
         }
@@ -1859,7 +1989,7 @@ namespace WinMemoryCleaner
                 return;
             }
 
-            Settings.Save();
+            Settings.SaveAsync();
 
             RaisePropertyChanged(() => OptimizationKey);
             RaisePropertyChanged(() => OptimizationModifiers);
@@ -1909,7 +2039,7 @@ namespace WinMemoryCleaner
                 IsBusy = true;
 
                 if (Settings.ProcessExclusionList.Remove(process))
-                    Settings.Save();
+                    Settings.SaveAsync();
 
                 RaisePropertyChanged(() => Processes);
                 RaisePropertyChanged(() => ProcessExclusionList);

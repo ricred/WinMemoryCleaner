@@ -23,6 +23,7 @@ namespace WinMemoryCleaner
     {
         #region Fields
 
+        private static int _lastAppliedPriority = int.MinValue;
         private static bool _isRunning;
         private static Mutex _mutex;
         private static WinForms.NotifyIcon _notifyIcon;
@@ -773,6 +774,11 @@ namespace WinMemoryCleaner
         /// </summary>
         public static void SetPriority(Enums.Priority priority)
         {
+            // Skip when the requested priority has already been applied - avoids re-enumerating
+            // and mutating every thread on each monitor tick
+            if (Thread.VolatileRead(ref _lastAppliedPriority) == (int)priority)
+                return;
+
             bool priorityBoostEnabled;
             ProcessPriorityClass processPriorityClass;
             ThreadPriority threadPriority;
@@ -816,31 +822,11 @@ namespace WinMemoryCleaner
 
             try
             {
-                var process = Process.GetCurrentProcess();
-
-                try
-                {
-                    process.PriorityBoostEnabled = priorityBoostEnabled;
-                }
-                catch
-                {
-                    // ignored
-                }
-
-                try
-                {
-                    process.PriorityClass = processPriorityClass;
-                }
-                catch
-                {
-                    // ignored
-                }
-
-                foreach (ProcessThread thread in process.Threads)
+                using (var process = Process.GetCurrentProcess())
                 {
                     try
                     {
-                        thread.PriorityBoostEnabled = priorityBoostEnabled;
+                        process.PriorityBoostEnabled = priorityBoostEnabled;
                     }
                     catch
                     {
@@ -849,13 +835,41 @@ namespace WinMemoryCleaner
 
                     try
                     {
-                        thread.PriorityLevel = threadPriorityLevel;
+                        process.PriorityClass = processPriorityClass;
                     }
                     catch
                     {
                         // ignored
                     }
+
+                    foreach (ProcessThread thread in process.Threads)
+                    {
+                        try
+                        {
+                            thread.PriorityBoostEnabled = priorityBoostEnabled;
+                        }
+                        catch
+                        {
+                            // ignored
+                        }
+
+                        try
+                        {
+                            thread.PriorityLevel = threadPriorityLevel;
+                        }
+                        catch
+                        {
+                            // ignored
+                        }
+                        finally
+                        {
+                            thread.Dispose();
+                        }
+                    }
                 }
+
+                // Mark as applied only after a full successful pass, so a failed call can retry on the next tick
+                Interlocked.Exchange(ref _lastAppliedPriority, (int)priority);
             }
             catch
             {
