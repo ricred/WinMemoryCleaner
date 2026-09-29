@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "de optimalisatie van {0} wordt niet ondersteund op deze besturingssysteemversie",
   "ErrorResetCommand": "reset mislukt: {0}",
   "EveryHour": "elke {0}h",
+  "EveryMinute": "elke {0} min",
   "Exit": "sluiten",
   "Expand": "uitvouwen",
   "Free": "vrij",

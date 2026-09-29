@@ -65,7 +65,7 @@ namespace WinMemoryCleaner
             base.OnAfterInstall(savedState);
 
             // Service recommended settings
-            Settings.AutoOptimizationInterval = Settings.AutoOptimizationInterval == 0 ? 24 : Settings.AutoOptimizationInterval;
+            Settings.AutoOptimizationInterval = Settings.AutoOptimizationInterval == 0 ? 1440 : Settings.AutoOptimizationInterval;
             Settings.AutoOptimizationMemoryUsage = Settings.AutoOptimizationMemoryUsage == 0 ? 10 : Settings.AutoOptimizationMemoryUsage;
             Settings.MemoryAreas = Enums.Memory.Areas.CombinedPageList | Enums.Memory.Areas.ModifiedFileCache | Enums.Memory.Areas.ModifiedPageList | Enums.Memory.Areas.RegistryCache | Enums.Memory.Areas.StandbyList | Enums.Memory.Areas.SystemFileCache | Enums.Memory.Areas.WorkingSet;
             Settings.RunOnPriority = Enums.Priority.Low;

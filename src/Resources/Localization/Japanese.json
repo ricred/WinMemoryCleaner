@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "{0} の最適化は、このオペレーティング システムのバージョンではサポートされていません",
   "ErrorResetCommand": "リセットに失敗しました：{0}",
   "EveryHour": "毎 {0}h",
+  "EveryMinute": "毎 {0}分",
   "Exit": "終了",
   "Expand": "展開",
   "Free": "フリー",

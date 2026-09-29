@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "a(z) {0} optimalizálása nem támogatott ezen az operációs rendszer verzión",
   "ErrorResetCommand": "a visszaállítás sikertelen: {0}",
   "EveryHour": "minden {0} óra",
+  "EveryMinute": "minden {0} perc",
   "Exit": "kilépés",
   "Expand": "kibontás",
   "Free": "szabad memória",

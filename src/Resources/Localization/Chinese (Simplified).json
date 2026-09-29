@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "此操作系统版本不支持 {0} 优化",
   "ErrorResetCommand": "重置失败：{0}",
   "EveryHour": "每隔 {0}h",
+  "EveryMinute": "每隔 {0} 分钟",
   "Exit": "退出",
   "Expand": "展开",
   "Free": "可用",

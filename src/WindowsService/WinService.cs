@@ -118,7 +118,7 @@ namespace WinMemoryCleaner
 
             // Interval
             if (Settings.AutoOptimizationInterval > 0 &&
-                DateTimeOffset.Now.Subtract(_lastAutoOptimizationByInterval).TotalHours >= Settings.AutoOptimizationInterval)
+                DateTimeOffset.Now.Subtract(_lastAutoOptimizationByInterval).TotalMinutes >= Settings.AutoOptimizationInterval)
             {
                 DependencyInjection.Container.Resolve<IComputerService>().Optimize(Enums.Memory.Optimization.Reason.Schedule, Settings.MemoryAreas);
 

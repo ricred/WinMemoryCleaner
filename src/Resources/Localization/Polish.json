@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "optymalizacja {0} nie jest obsługiwana w tej wersji systemu operacyjnego",
   "ErrorResetCommand": "resetowanie nie powiodło się: {0}",
   "EveryHour": "co {0}h",
+  "EveryMinute": "co {0} min",
   "Exit": "wyjdź",
   "Expand": "rozwiń",
   "Free": "wolna",

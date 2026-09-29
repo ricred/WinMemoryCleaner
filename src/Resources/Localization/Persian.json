@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "بهینه‌سازی {0} در این نسخه از سیستم عامل پشتیبانی نمی‌شود",
   "ErrorResetCommand": "بازنشانی ناموفق بود: {0}",
   "EveryHour": "هر {0}س",
+  "EveryMinute": "هر {0} دقیقه",
   "Exit": "خروج",
   "Expand": "گسترش",
   "Free": "آزاد",

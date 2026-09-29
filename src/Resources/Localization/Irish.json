@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "ní thacaítear le barrfheabhsú {0} ar an leagan córais oibriúcháin seo",
   "ErrorResetCommand": "theip ar athshocrú: {0}",
   "EveryHour": "gach {0}h",
+  "EveryMinute": "gach {0} nóiméad",
   "Exit": "scoir",
   "Expand": "leathnaigh",
   "Free": "saor",

@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "האופטימיזציה {0} אינה נתמכת בגרסת מערכת הפעלה זו",
   "ErrorResetCommand": "האיפוס נכשל: {0}",
   "EveryHour": "כל {0} שעות",
+  "EveryMinute": "כל {0} דקות",
   "Exit": "יציאה",
   "Expand": "הרחב",
   "Free": "פנוי",

@@ -2,6 +2,7 @@ using NUnit.Framework;
 using System;
 using System.ComponentModel;
 using System.IO;
+using Microsoft.Win32;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
@@ -1092,6 +1093,40 @@ namespace WinMemoryCleaner.Test
             public void AutoOptimizationInterval_CanBeAccessed()
             {
                 Assert.DoesNotThrow(() => { var interval = Settings.AutoOptimizationInterval; });
+            }
+
+            [Test]
+            public void AutoOptimizationInterval_LegacyHoursValue_IsConvertedToMinutes()
+            {
+                // The legacy "AutoOptimizationInterval" registry value stored hours; the new
+                // "AutoOptimizationIntervalMinutes" value stores minutes. Loading with only the
+                // legacy value present must convert hours to minutes (24h -> 1440 min).
+                var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+                var principal = new System.Security.Principal.WindowsPrincipal(identity);
+
+                if (!principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator))
+                    Assert.Ignore("Requires administrator privileges to write HKLM registry");
+
+                var originalInterval = Settings.AutoOptimizationInterval;
+
+                try
+                {
+                    using (var key = Registry.LocalMachine.CreateSubKey(Constants.App.Registry.Key.Settings))
+                    {
+                        key.SetValue("AutoOptimizationInterval", 24);
+                        key.DeleteValue("AutoOptimizationIntervalMinutes", false);
+                    }
+
+                    var load = typeof(Settings).GetMethod("Load", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                    load.Invoke(null, new object[] { true });
+
+                    Assert.AreEqual(1440, Settings.AutoOptimizationInterval);
+                }
+                finally
+                {
+                    Settings.AutoOptimizationInterval = originalInterval;
+                    Settings.Save();
+                }
             }
 
             [Test]

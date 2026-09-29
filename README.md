@@ -37,7 +37,7 @@ winget install IgorMundstein.WinMemoryCleaner
 | Feature | Description |
 |:---|:---|
 | **Always&nbsp;on&nbsp;Top** | Pins the main application window so it is always visible above other windows. |
-| **Auto&nbsp;Optimization** | Set the app to clean memory automatically, either by period (`Every X hours`) or when free physical RAM drops below a specified threshold (`When free physical memory is below X percent`). |
+| **Auto&nbsp;Optimization** | Set the app to clean memory automatically, either by period (`Every 10 minutes to 168 hours`) or when free physical RAM drops below a specified threshold (`When free physical memory is below X percent`). |
 | **Auto&nbsp;Update** | Automatically checks for new versions every 24 hours to keep the application up to date. |
 | **Close&nbsp;after&nbsp;Optimization** | The application will automatically close after a memory optimization is completed. |
 | **Close&nbsp;to&nbsp;Notification&nbsp;Area** | Minimizes the app to the system tray instead of closing when the 'X' button is clicked. |

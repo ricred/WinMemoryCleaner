@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "optimizacija {0} ni podprta v tej različici operacijskega sistema",
   "ErrorResetCommand": "ponastavitev ni uspela: {0}",
   "EveryHour": "vsakih {0}h",
+  "EveryMinute": "vsakih {0} min",
   "Exit": "izhod",
   "Expand": "razširi",
   "Free": "prosto",

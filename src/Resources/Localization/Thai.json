@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "การเพิ่มประสิทธิภาพ {0} ไม่รองรับในเวอร์ชันของระบบปฏิบัติการนี้",
   "ErrorResetCommand": "การรีเซ็ตล้มเหลว: {0}",
   "EveryHour": "ทุก {0}h",
+  "EveryMinute": "ทุก {0} นาที",
   "Exit": "ออก",
   "Expand": "ขยาย",
   "Free": "ว่าง",

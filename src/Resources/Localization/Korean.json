@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "이 운영 체제 버전에서는 {0} 최적화가 지원되지 않습니다.",
   "ErrorResetCommand": "재설정 실패: {0}",
   "EveryHour": "매 {0}시간마다",
+  "EveryMinute": "매 {0}분",
   "Exit": "종료",
   "Expand": "펴기",
   "Free": "여유",

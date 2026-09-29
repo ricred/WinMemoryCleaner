@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "the memory area {0} optimization is not supported on this version of the operating system",
   "ErrorResetCommand": "reset failed: {0}",
   "EveryHour": "every {0}h",
+  "EveryMinute": "every {0} min",
   "Exit": "exit",
   "Expand": "expand",
   "Free": "free",

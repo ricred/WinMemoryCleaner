@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "optimizimi i {0} nuk mbështetet në këtë version të sistemit operativ",
   "ErrorResetCommand": "rivendosja dështoi: {0}",
   "EveryHour": "çdo {0}h",
+  "EveryMinute": "çdo {0} min",
   "Exit": "dil",
   "Expand": "zgjero",
   "Free": "falas",

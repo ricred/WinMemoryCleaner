@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "optimalisasi {0} tidak didukung oleh sistem operasi dengan versi ini",
   "ErrorResetCommand": "reset gagal: {0}",
   "EveryHour": "setiap {0}j",
+  "EveryMinute": "setiap {0} mnt",
   "Exit": "keluar",
   "Expand": "perluas",
   "Free": "sisa",

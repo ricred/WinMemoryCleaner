@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "оптимизацијата на {0} не е поддржана на оваа верзија на оперативниот систем",
   "ErrorResetCommand": "ресетирањето не успеа: {0}",
   "EveryHour": "секој {0}h",
+  "EveryMinute": "на секои {0} мин",
   "Exit": "излез",
   "Expand": "прошири",
   "Free": "слободно",

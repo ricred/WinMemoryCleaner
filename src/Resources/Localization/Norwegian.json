@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "{0}-optimalisering støttes ikke på denne versjonen av operativsystemet",
   "ErrorResetCommand": "tilbakestilling mislyktes: {0}",
   "EveryHour": "hvert {0}h",
+  "EveryMinute": "hvert {0} min",
   "Exit": "avslutt",
   "Expand": "utvid",
   "Free": "ledig",

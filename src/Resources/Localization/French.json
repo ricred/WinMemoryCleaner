@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "l'optimisation {0} n'est pas prise en charge sur cette version du système d'exploitation",
   "ErrorResetCommand": "échec de la réinitialisation : {0}",
   "EveryHour": "tous les {0}h",
+  "EveryMinute": "toutes les {0} min",
   "Exit": "quitter",
   "Expand": "développer",
   "Free": "libre",

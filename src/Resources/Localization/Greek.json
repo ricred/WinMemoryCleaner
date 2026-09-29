@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "η βελτιστοποίηση {0} δεν υποστηρίζεται σε αυτήν την έκδοση λειτουργικού συστήματος",
   "ErrorResetCommand": "η επαναφορά απέτυχε: {0}",
   "EveryHour": "κάθε {0}h",
+  "EveryMinute": "κάθε {0} λεπτά",
   "Exit": "έξοδος",
   "Expand": "ανάπτυξη",
   "Free": "ελεύθερη",

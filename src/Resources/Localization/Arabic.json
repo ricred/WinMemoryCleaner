@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "تحسين {0} غير مدعوم في إصدار نظام التشغيل هذا",
   "ErrorResetCommand": "فشلت إعادة التعيين: {0}",
   "EveryHour": "كل {0} ساعة",
+  "EveryMinute": "كل {0} دقيقة",
   "Exit": "خروج",
   "Expand": "توسيع",
   "Free": "متاحة",

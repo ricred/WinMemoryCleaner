@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "此作業系統版本不支援 {0} 最佳化",
   "ErrorResetCommand": "重置失敗：{0}",
   "EveryHour": "每隔 {0}h",
+  "EveryMinute": "每隔 {0} 分鐘",
   "Exit": "結束",
   "Expand": "展開",
   "Free": "可用",

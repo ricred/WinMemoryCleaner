@@ -22,6 +22,7 @@
   "ErrorMemoryAreaOptimizationNotSupported": "{0} optimizasyonu bu işletim sistemi sürümünde desteklenmiyor",
   "ErrorResetCommand": "sıfırlama başarısız: {0}",
   "EveryHour": "her {0}s",
+  "EveryMinute": "her {0} dk",
   "Exit": "çıkış",
   "Expand": "genişlet",
   "Free": "boş",
