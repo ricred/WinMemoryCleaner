@@ -1,3 +1,12 @@
+### Unreleased
+
+- Changed auto optimization interval to minutes granularity (10 min to 168 h); legacy hours values migrate automatically on first run
+- Fixed GCHandle leaks in working set and system file cache optimization
+- Fixed leaked process handle in console mode memory release
+- Reduced idle CPU/allocations: cached process list with smart refresh, pre-rendered tray icon rotation frames, fewer redundant UI updates per monitor tick
+- Settings now save in the background with debouncing, keeping the UI responsive during rapid changes
+- UI & Code enhancements
+
 ### 3.0.8
 
 **2025-12-13**
