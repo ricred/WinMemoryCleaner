@@ -33,6 +33,10 @@ namespace WinMemoryCleaner
         private DateTimeOffset _lastAutoOptimizationByInterval = DateTimeOffset.Now;
         private DateTimeOffset _lastAutoOptimizationByMemoryUsage = DateTimeOffset.Now;
         private readonly object _lockObject = new object();
+        private readonly object _processesLock = new object();
+        private ObservableCollection<string> _processesCache;
+        private DateTime _processesCacheTime;
+        private string _lastVirtualMemoryHeader;
         private byte _optimizationProgressPercentage;
         private string _optimizationProgressStep = Localizer.String.Optimize;
         private byte _optimizationProgressTotal = byte.MaxValue;
@@ -202,7 +206,13 @@ namespace WinMemoryCleaner
         /// </value>
         public string AutoOptimizationMemoryIntervalDescription
         {
-            get { return string.Format(Localizer.Culture, Localizer.String.EveryHour, AutoOptimizationInterval); }
+            get
+            {
+                // The interval is specified in minutes: whole hours keep the "every {0}h" label, sub-hour values show minutes
+                return AutoOptimizationInterval % 60 == 0
+                    ? string.Format(Localizer.Culture, Localizer.String.EveryHour, AutoOptimizationInterval / 60)
+                    : string.Format(Localizer.Culture, Localizer.String.EveryMinute, AutoOptimizationInterval);
+            }
         }
 
         /// <summary>
@@ -832,42 +842,71 @@ namespace WinMemoryCleaner
         {
             get
             {
-                // Properly enumerate and dispose Process handles to prevent memory leaks
-                // Process.GetProcesses() returns native handles that must be explicitly released
-                var processNames = new List<string>();
-
-                foreach (var process in Process.GetProcesses())
+                // Cached with a short TTL: WPF can re-evaluate this binding frequently, and each
+                // miss costs a full process snapshot (Process.GetProcesses + native handles).
+                // Exclusion-list edits and dropdown opens force a refresh via RefreshProcesses().
+                lock (_processesLock)
                 {
-                    if (process == null)
-                        continue;
-
-                    if (process.ProcessName.Equals(Constants.App.Name))
-                        continue;
-
-                    if (Settings.ProcessExclusionList.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase))
+                    if (_processesCache == null || (DateTime.UtcNow - _processesCacheTime).TotalSeconds > 10)
                     {
-                        try { process.Dispose(); } catch { }
-                        continue;
-                    }
+                        // Properly enumerate and dispose Process handles to prevent memory leaks
+                        // Process.GetProcesses() returns native handles that must be explicitly released
+                        var processNames = new List<string>();
 
-                    try
-                    {
-                        processNames.Add(process.ProcessName.ToLower(Localizer.Culture).Replace(".exe", string.Empty));
-                    }
-                    finally
-                    {
-                        // Ensure process handle is closed to prevent leaks
-                        try { process.Dispose(); } catch { }
+                        foreach (var process in Process.GetProcesses())
+                        {
+                            if (process == null)
+                                continue;
+
+                            if (process.ProcessName.Equals(Constants.App.Name))
+                            {
+                                try { process.Dispose(); } catch { }
+                                continue;
+                            }
+
+                            if (Settings.ProcessExclusionList.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase))
+                            {
+                                try { process.Dispose(); } catch { }
+                                continue;
+                            }
+
+                            try
+                            {
+                                // ProcessName never carries the .exe extension
+                                processNames.Add(process.ProcessName.ToLower(Localizer.Culture));
+                            }
+                            finally
+                            {
+                                // Ensure process handle is closed to prevent leaks
+                                try { process.Dispose(); } catch { }
+                            }
+                        }
+
+                        _processesCache = new ObservableCollection<string>(processNames.Distinct().OrderBy(name => name));
+                        _processesCacheTime = DateTime.UtcNow;
                     }
                 }
 
-                var result = new ObservableCollection<string>(processNames.Distinct().OrderBy(name => name));
+                var result = _processesCache;
 
                 if (!result.Contains(SelectedProcess, StringComparer.OrdinalIgnoreCase))
                     SelectedProcess = result.FirstOrDefault();
 
                 return result;
             }
+        }
+
+        /// <summary>
+        /// Invalidates the cached process list and notifies bindings to re-read it.
+        /// </summary>
+        public void RefreshProcesses()
+        {
+            lock (_processesLock)
+            {
+                _processesCache = null;
+            }
+
+            RaisePropertyChanged(() => Processes);
         }
 
 
@@ -1658,7 +1697,7 @@ namespace WinMemoryCleaner
                     {
                         Settings.SaveAsync();
 
-                        RaisePropertyChanged(() => Processes);
+                        RefreshProcesses();
                         RaisePropertyChanged(() => ProcessExclusionList);
 
                 if (OnAddProcessToExclusionListCommandCompleted != null)
@@ -1721,7 +1760,7 @@ namespace WinMemoryCleaner
                         {
                             // Interval
                             if (Settings.AutoOptimizationInterval > 0 &&
-                                DateTimeOffset.Now.Subtract(_lastAutoOptimizationByInterval).TotalHours >= Settings.AutoOptimizationInterval)
+                                DateTimeOffset.Now.Subtract(_lastAutoOptimizationByInterval).TotalMinutes >= Settings.AutoOptimizationInterval)
                             {
                                 OptimizeAsync(Enums.Memory.Optimization.Reason.Schedule);
 
@@ -1814,12 +1853,26 @@ namespace WinMemoryCleaner
                     isOptimizing = IsOptimizationRunning;
                 }
 
-                // Update UI OUTSIDE the lock to prevent deadlock
+                // Update UI OUTSIDE the lock to prevent deadlock.
+                // The service refreshes Memory in place (same instance every read), so raise "Computer"
+                // only when the reference actually changes; granular MemorySize INPC keeps the UI live.
                 if (newMemory != null)
                 {
-                    Computer.Memory = newMemory;
-                    RaisePropertyChanged(() => Computer);
-                    RaisePropertyChanged(() => VirtualMemoryHeader);
+                    if (Computer.Memory != newMemory)
+                    {
+                        Computer.Memory = newMemory;
+                        RaisePropertyChanged(() => Computer);
+                    }
+
+                    // VirtualMemoryHeader derives from Virtual.Total, which only changes when the pagefile
+                    // or physical RAM changes - not every tick. Raise only when its value actually changes.
+                    var virtualHeader = VirtualMemoryHeader;
+                    if (virtualHeader != _lastVirtualMemoryHeader)
+                    {
+                        _lastVirtualMemoryHeader = virtualHeader;
+                        RaisePropertyChanged(() => VirtualMemoryHeader);
+                    }
+
                     NotificationService.Update(newMemory, isOptimizing);
                 }
             }
@@ -1906,11 +1959,16 @@ namespace WinMemoryCleaner
                     IsBusy = false;
                 }
 
-                // Update UI and notification outside of lock to prevent deadlock
+                // Update UI and notification outside of lock to prevent deadlock.
+                // Raise "Computer" only when the reference actually changes - the service refreshes
+                // Memory in place and granular MemorySize INPC keeps the UI live.
                 if (updatedMemory != null)
                 {
-                    Computer.Memory = updatedMemory;
-                    RaisePropertyChanged(() => Computer);
+                    if (Computer.Memory != updatedMemory)
+                    {
+                        Computer.Memory = updatedMemory;
+                        RaisePropertyChanged(() => Computer);
+                    }
                 }
 
                 NotificationService.Update(Computer.Memory, false);
@@ -2041,7 +2099,7 @@ namespace WinMemoryCleaner
                 if (Settings.ProcessExclusionList.Remove(process))
                     Settings.SaveAsync();
 
-                RaisePropertyChanged(() => Processes);
+                RefreshProcesses();
                 RaisePropertyChanged(() => ProcessExclusionList);
 
                 if (OnRemoveProcessFromExclusionListCommandCompleted != null)

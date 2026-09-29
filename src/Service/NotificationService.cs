@@ -22,12 +22,25 @@ namespace WinMemoryCleaner
         private int _currentRotationAngle;
         private Icon _currentIcon;
         private bool _disposed;
-        private string _lastIconStateKey;
+        private bool _hasLastIconState;
+        private bool _lastIsOptimizing;
+        private bool _lastTrayIconShowMemoryUsage;
+        private bool _lastTrayIconUseTransparentBackground;
+        private byte _lastTrayIconDangerLevel;
+        private byte _lastTrayIconWarningLevel;
+        private int _lastUsedPercentage;
+        private int _lastVirtualPercentage;
+        private int _lastBackgroundArgb;
+        private int _lastTextArgb;
+        private int _lastOptimizingArgb;
+        private int _lastDangerArgb;
+        private int _lastWarningArgb;
         private string _lastText;
         private readonly Icon _imageIcon;
         private readonly NotifyIcon _notifyIcon;
         private readonly object _disposeLock = new object();
         private DispatcherTimer _rotationTimer;
+        private Icon[] _rotationFrames;
 
         #endregion
 
@@ -189,11 +202,62 @@ namespace WinMemoryCleaner
                     _rotationTimer.Tick -= OnRotationTimerTick;
                     _rotationTimer = null;
                 }
+
+                // Release the pre-rendered rotation frames
+                DisposeRotationFrames();
             }
             catch (Exception ex)
             {
                 Logger.Debug(ex);
             }
+        }
+
+        /// <summary>
+        /// Disposes the pre-rendered rotation frames (frame 0 is the original icon and is not owned here)
+        /// </summary>
+        private void DisposeRotationFrames()
+        {
+            if (_rotationFrames == null)
+                return;
+
+            for (var i = 0; i < _rotationFrames.Length; i++)
+            {
+                if (_rotationFrames[i] != null && _rotationFrames[i] != _imageIcon)
+                {
+                    try
+                    {
+                        _rotationFrames[i].Dispose();
+                    }
+                    catch
+                    {
+                        // ignored
+                    }
+                }
+
+                _rotationFrames[i] = null;
+            }
+
+            _rotationFrames = null;
+        }
+
+        /// <summary>
+        /// Determines whether the specified icon is one of the pre-rendered rotation frames.
+        /// Frames are owned by the rotation animation and disposed with it, never per-swap.
+        /// </summary>
+        /// <param name="icon">The icon to check</param>
+        /// <returns><c>true</c> when the icon is a shared rotation frame</returns>
+        private bool IsRotationFrame(Icon icon)
+        {
+            if (_rotationFrames == null)
+                return false;
+
+            for (var i = 0; i < _rotationFrames.Length; i++)
+            {
+                if (_rotationFrames[i] != null && ReferenceEquals(_rotationFrames[i], icon))
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -255,14 +319,17 @@ namespace WinMemoryCleaner
         }
 
         /// <summary>
-        /// Builds a state key covering every input that affects the rendered tray icon,
-        /// so unchanged states skip the GDI+ re-render entirely
+        /// Determines whether every input that affects the rendered tray icon is unchanged
+        /// since the last accepted Update, so the GDI+ re-render can be skipped entirely.
         /// </summary>
         /// <param name="memory">The memory information</param>
         /// <param name="isOptimizing">if set to <c>true</c> the system is optimizing</param>
-        /// <returns>A string that is equal iff the icon would render identically; null to force a re-render</returns>
-        private string GetIconStateKey(Memory memory, bool isOptimizing)
+        /// <returns><c>true</c> when the icon would render identically to the current one</returns>
+        private bool IsIconStateUnchanged(Memory memory, bool isOptimizing)
         {
+            if (!_hasLastIconState)
+                return false;
+
             try
             {
                 var usedPercentage = memory.Physical.Used.Percentage;
@@ -274,27 +341,59 @@ namespace WinMemoryCleaner
                 var dangerBrush = Settings.TrayIconDangerColor as SolidBrush;
                 var warningBrush = Settings.TrayIconWarningColor as SolidBrush;
 
-                return string.Format
-                (
-                    CultureInfo.InvariantCulture,
-                    "{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}",
-                    usedPercentage,
-                    virtualPercentage,
-                    isOptimizing,
-                    Settings.TrayIconShowMemoryUsage,
-                    Settings.TrayIconUseTransparentBackground,
-                    Settings.TrayIconDangerLevel,
-                    Settings.TrayIconWarningLevel,
-                    Settings.TrayIconUseTransparentBackground ? Color.Transparent.ToArgb() : backgroundBrush.Color.ToArgb(),
-                    textBrush.Color.ToArgb(),
-                    optimizingBrush.Color.ToArgb(),
-                    dangerBrush.Color.ToArgb() + "|" + warningBrush.Color.ToArgb()
-                );
+                return usedPercentage == _lastUsedPercentage
+                    && virtualPercentage == _lastVirtualPercentage
+                    && isOptimizing == _lastIsOptimizing
+                    && Settings.TrayIconShowMemoryUsage == _lastTrayIconShowMemoryUsage
+                    && Settings.TrayIconUseTransparentBackground == _lastTrayIconUseTransparentBackground
+                    && Settings.TrayIconDangerLevel == _lastTrayIconDangerLevel
+                    && Settings.TrayIconWarningLevel == _lastTrayIconWarningLevel
+                    && (Settings.TrayIconUseTransparentBackground ? Color.Transparent.ToArgb() : backgroundBrush.Color.ToArgb()) == _lastBackgroundArgb
+                    && textBrush.Color.ToArgb() == _lastTextArgb
+                    && optimizingBrush.Color.ToArgb() == _lastOptimizingArgb
+                    && dangerBrush.Color.ToArgb() == _lastDangerArgb
+                    && warningBrush.Color.ToArgb() == _lastWarningArgb;
             }
             catch
             {
-                // Fingerprinting failed - force a re-render next time
-                return null;
+                // Fingerprinting failed - force a re-render
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Records the icon inputs accepted by the last Update.
+        /// </summary>
+        private void RememberIconState(Memory memory, bool isOptimizing)
+        {
+            try
+            {
+                _lastUsedPercentage = memory.Physical.Used.Percentage;
+                _lastVirtualPercentage = Settings.ShowVirtualMemory ? memory.Virtual.Used.Percentage : -1;
+                _lastIsOptimizing = isOptimizing;
+
+                _lastTrayIconShowMemoryUsage = Settings.TrayIconShowMemoryUsage;
+                _lastTrayIconUseTransparentBackground = Settings.TrayIconUseTransparentBackground;
+                _lastTrayIconDangerLevel = Settings.TrayIconDangerLevel;
+                _lastTrayIconWarningLevel = Settings.TrayIconWarningLevel;
+
+                var backgroundBrush = Settings.TrayIconBackgroundColor as SolidBrush;
+                var textBrush = Settings.TrayIconTextColor as SolidBrush;
+                var optimizingBrush = Settings.TrayIconOptimizingColor as SolidBrush;
+                var dangerBrush = Settings.TrayIconDangerColor as SolidBrush;
+                var warningBrush = Settings.TrayIconWarningColor as SolidBrush;
+
+                _lastBackgroundArgb = Settings.TrayIconUseTransparentBackground ? Color.Transparent.ToArgb() : backgroundBrush.Color.ToArgb();
+                _lastTextArgb = textBrush.Color.ToArgb();
+                _lastOptimizingArgb = optimizingBrush.Color.ToArgb();
+                _lastDangerArgb = dangerBrush.Color.ToArgb();
+                _lastWarningArgb = warningBrush.Color.ToArgb();
+
+                _hasLastIconState = true;
+            }
+            catch
+            {
+                _hasLastIconState = false;
             }
         }
 
@@ -311,8 +410,9 @@ namespace WinMemoryCleaner
                 {
                     StartRotationAnimation();
 
-                    if (_currentRotationAngle > 0)
-                        return GetRotatedIcon(_imageIcon, _currentRotationAngle);
+                    // Frame 0 is the original icon; mid-rotation Update() calls return the current frame
+                    if (_currentRotationAngle > 0 && _rotationFrames != null)
+                        return _rotationFrames[_currentRotationAngle / 90];
                 }
                 else
                 {
@@ -576,13 +676,15 @@ namespace WinMemoryCleaner
                 {
                     _currentRotationAngle = (_currentRotationAngle + 90) % 360;
 
-                    var newIcon = GetRotatedIcon(_imageIcon, _currentRotationAngle);
+                    // Cycle the pre-rendered frame - no per-tick GDI+ work
+                    var newIcon = _rotationFrames != null ? _rotationFrames[_currentRotationAngle / 90] : GetRotatedIcon(_imageIcon, _currentRotationAngle);
                     var oldIcon = _currentIcon;
 
                     _notifyIcon.Icon = newIcon;
                     _currentIcon = newIcon;
 
-                    if (oldIcon != null && oldIcon != _imageIcon && oldIcon != newIcon)
+                    // Rotation frames are shared and disposed with the animation - never per-swap
+                    if (oldIcon != null && oldIcon != _imageIcon && oldIcon != newIcon && !IsRotationFrame(oldIcon))
                     {
                         try
                         {
@@ -624,8 +726,15 @@ namespace WinMemoryCleaner
                     {
                         _currentRotationAngle = 0;
 
-                        // 500 ms: users cannot perceive faster rotation on a 16x16 tray glyph,
-                        // and each tick is a full GDI+ re-render on the UI thread
+                        // Pre-render the 4 rotation frames (0/90/180/270) once instead of
+                        // re-rendering GDI+ on every timer tick for the whole optimization run
+                        DisposeRotationFrames();
+                        _rotationFrames = new Icon[4];
+
+                        for (var i = 0; i < 4; i++)
+                            _rotationFrames[i] = GetRotatedIcon(_imageIcon, i * 90);
+
+                        // 500 ms: users cannot perceive faster rotation on a 16x16 tray glyph
                         _rotationTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
                         _rotationTimer.Tick += OnRotationTimerTick;
                         _rotationTimer.Start();
@@ -689,9 +798,8 @@ namespace WinMemoryCleaner
                 {
                     // Skip redundant re-render when nothing that affects icon or text has changed
                     var text = GetText(memory, isOptimizing);
-                    var iconStateKey = GetIconStateKey(memory, isOptimizing);
 
-                    if (iconStateKey == _lastIconStateKey && text == _lastText)
+                    if (text == _lastText && IsIconStateUnchanged(memory, isOptimizing))
                         return;
 
                     _notifyIcon.Text = text;
@@ -702,7 +810,8 @@ namespace WinMemoryCleaner
                     _notifyIcon.Icon = newIcon;
                     _currentIcon = newIcon;
 
-                    if (oldIcon != null && oldIcon != _imageIcon && oldIcon != newIcon)
+                    // Rotation frames are shared and disposed with the animation - never per-swap
+                    if (oldIcon != null && oldIcon != _imageIcon && oldIcon != newIcon && !IsRotationFrame(oldIcon))
                     {
                         try
                         {
@@ -714,7 +823,7 @@ namespace WinMemoryCleaner
                         }
                     }
 
-                    _lastIconStateKey = iconStateKey;
+                    RememberIconState(memory, isOptimizing);
                     _lastText = text;
                 }
                 catch (ObjectDisposedException)

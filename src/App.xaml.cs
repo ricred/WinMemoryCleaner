@@ -615,7 +615,10 @@ namespace WinMemoryCleaner
             // Optimize App Working Set
             try
             {
-                NativeMethods.EmptyWorkingSet(Process.GetCurrentProcess().Handle);
+                using (var process = Process.GetCurrentProcess())
+                {
+                    NativeMethods.EmptyWorkingSet(process.Handle);
+                }
             }
             catch (Exception)
             {

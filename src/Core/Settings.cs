@@ -15,7 +15,10 @@ namespace WinMemoryCleaner
     {
         private static readonly CultureInfo _culture = new CultureInfo(Constants.Windows.Locale.Name.English);
         private static readonly object _settingsLock = new object();
-        private static CancellationTokenSource _saveCancellationTokenSource;
+        private static Timer _saveDebounceTimer;
+
+        // The auto optimization interval is stored in minutes. Legacy versions stored hours under the "AutoOptimizationInterval" value name.
+        private const string AutoOptimizationMinutesValueName = "AutoOptimizationIntervalMinutes";
 
         #region Constructors
 
@@ -149,7 +152,7 @@ namespace WinMemoryCleaner
                     if (key != null)
                     {
                         AlwaysOnTop = Convert.ToBoolean(key.GetValue(Helper.NameOf(() => AlwaysOnTop), AlwaysOnTop), _culture);
-                        AutoOptimizationInterval = Convert.ToInt32(key.GetValue(Helper.NameOf(() => AutoOptimizationInterval), AutoOptimizationInterval), _culture);
+                        AutoOptimizationInterval = Convert.ToInt32(key.GetValue(AutoOptimizationMinutesValueName, Convert.ToInt32(key.GetValue(Helper.NameOf(() => AutoOptimizationInterval), 0), _culture) * 60), _culture);
                         AutoOptimizationMemoryUsage = Convert.ToInt32(key.GetValue(Helper.NameOf(() => AutoOptimizationMemoryUsage), AutoOptimizationMemoryUsage), _culture);
                         AutoUpdate = Convert.ToBoolean(key.GetValue(Helper.NameOf(() => AutoUpdate), AutoUpdate), _culture);
                         CloseAfterOptimization = Convert.ToBoolean(key.GetValue(Helper.NameOf(() => CloseAfterOptimization), CloseAfterOptimization), _culture);
@@ -229,80 +232,30 @@ namespace WinMemoryCleaner
 
         /// <summary>
         /// Saves settings asynchronously with debouncing to avoid blocking the UI thread.
+        /// Rapid successive calls (slider drags, etc.) collapse into a single registry write
+        /// that always persists the values current at fire time.
         /// </summary>
         public static void SaveAsync()
         {
             lock (_settingsLock)
             {
-                // Cancel any pending save operation
-                if (_saveCancellationTokenSource != null)
-                {
-                    _saveCancellationTokenSource.Cancel();
-                    _saveCancellationTokenSource.Dispose();
-                }
-                _saveCancellationTokenSource = new CancellationTokenSource();
+                if (_saveDebounceTimer == null)
+                    _saveDebounceTimer = new Timer(OnSaveDebounceElapsed, null, Timeout.Infinite, Timeout.Infinite);
 
-                // Capture current settings values
-                var alwaysOnTop = AlwaysOnTop;
-                var autoOptimizationInterval = AutoOptimizationInterval;
-                var autoOptimizationMemoryUsage = AutoOptimizationMemoryUsage;
-                var autoUpdate = AutoUpdate;
-                var closeAfterOptimization = CloseAfterOptimization;
-                var closeToTheNotificationArea = CloseToTheNotificationArea;
-                var compactMode = CompactMode;
-                var createStartMenuShortcut = CreateStartMenuShortcut;
-                var fontSize = FontSize;
-                var language = Language;
-                var memoryAreas = MemoryAreas;
-                var optimizationKey = OptimizationKey;
-                var optimizationModifiers = OptimizationModifiers;
-                var runOnPriority = RunOnPriority;
-                var runOnStartup = RunOnStartup;
-                var showOptimizationNotifications = ShowOptimizationNotifications;
-                var showVirtualMemory = ShowVirtualMemory;
-                var startMinimized = StartMinimized;
-                var trayIconBackgroundColor = TrayIconBackgroundColor;
-                var trayIconDangerColor = TrayIconDangerColor;
-                var trayIconDangerLevel = TrayIconDangerLevel;
-                var trayIconOptimizeOnMiddleMouseClick = TrayIconOptimizeOnMiddleMouseClick;
-                var trayIconOptimizingColor = TrayIconOptimizingColor;
-                var trayIconShowMemoryUsage = TrayIconShowMemoryUsage;
-                var trayIconTextColor = TrayIconTextColor;
-                var trayIconUseTransparentBackground = TrayIconUseTransparentBackground;
-                var trayIconWarningColor = TrayIconWarningColor;
-                var trayIconWarningLevel = TrayIconWarningLevel;
-                var useHotkey = UseHotkey;
-                var processExclusionList = new SortedSet<string>(ProcessExclusionList, StringComparer.OrdinalIgnoreCase);
-                var cts = _saveCancellationTokenSource;
+                // Re-arm: every call pushes the save 500ms into the future
+                _saveDebounceTimer.Change(500, Timeout.Infinite);
+            }
+        }
 
-                // Start new save operation with debouncing using ThreadPool
-                ThreadPool.QueueUserWorkItem(state =>
-                {
-                    try
-                    {
-                        // Wait 500ms before saving (debounce)
-                        if (!cts.Token.WaitHandle.WaitOne(500))
-                        {
-                            // Cancellation was not requested, proceed with save
-                            SaveInternal(
-                                alwaysOnTop, autoOptimizationInterval, autoOptimizationMemoryUsage, autoUpdate,
-                                closeAfterOptimization, closeToTheNotificationArea, compactMode, createStartMenuShortcut,
-                                fontSize, language, memoryAreas, optimizationKey, optimizationModifiers, runOnPriority,
-                                runOnStartup, showOptimizationNotifications, showVirtualMemory, startMinimized,
-                                trayIconBackgroundColor, trayIconDangerColor, trayIconDangerLevel, trayIconOptimizeOnMiddleMouseClick,
-                                trayIconOptimizingColor, trayIconShowMemoryUsage, trayIconTextColor, trayIconUseTransparentBackground,
-                                trayIconWarningColor, trayIconWarningLevel, useHotkey, processExclusionList);
-                        }
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        // Save was canceled, which is expected behavior
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Error(ex);
-                    }
-                });
+        private static void OnSaveDebounceElapsed(object state)
+        {
+            try
+            {
+                SaveInternal();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error(ex);
             }
         }
 
@@ -357,7 +310,10 @@ namespace WinMemoryCleaner
                     if (key != null)
                     {
                         key.SetValue(Helper.NameOf(() => AlwaysOnTop), alwaysOnTop ? 1 : 0);
-                        key.SetValue(Helper.NameOf(() => AutoOptimizationInterval), autoOptimizationInterval);
+                        key.SetValue(AutoOptimizationMinutesValueName, autoOptimizationInterval);
+
+                        // Remove the legacy hours-based value so the minutes-based value is the single source of truth
+                        key.DeleteValue(Helper.NameOf(() => AutoOptimizationInterval), false);
                         key.SetValue(Helper.NameOf(() => AutoOptimizationMemoryUsage), autoOptimizationMemoryUsage);
                         key.SetValue(Helper.NameOf(() => AutoUpdate), autoUpdate ? 1 : 0);
                         key.SetValue(Helper.NameOf(() => CloseAfterOptimization), closeAfterOptimization ? 1 : 0);

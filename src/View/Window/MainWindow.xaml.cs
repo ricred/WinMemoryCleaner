@@ -244,7 +244,8 @@ namespace WinMemoryCleaner
         /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
         private void OnProcessesDropDownOpened(object sender, EventArgs e)
         {
-            _viewModel.RaisePropertyChanged(() => _viewModel.Processes);
+            // Dropdown open is the one place process-list freshness matters; bypasses the TTL cache
+            _viewModel.RefreshProcesses();
         }
 
         /// <summary>

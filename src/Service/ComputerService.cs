@@ -1,5 +1,6 @@
 ﻿using Microsoft.Win32.SafeHandles;
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -19,6 +20,8 @@ namespace WinMemoryCleaner
 
         private readonly object _memoryLock = new object();
         private Memory _memory = new Memory(new Structs.Windows.MemoryStatusEx());
+        private readonly Structs.Windows.MemoryStatusEx _memoryStatusEx = new Structs.Windows.MemoryStatusEx();
+        private readonly HashSet<string> _privilegeCache = new HashSet<string>(StringComparer.Ordinal);
         private OperatingSystem _operatingSystem;
 
         #endregion
@@ -37,12 +40,12 @@ namespace WinMemoryCleaner
                 {
                     try
                     {
-                        var memoryStatusEx = new Structs.Windows.MemoryStatusEx();
-
-                        if (!NativeMethods.GlobalMemoryStatusEx(memoryStatusEx))
+                        // Reuse the same marshalable instance - the marshaler overwrites its fields
+                        // on marshal-back. Safe: all access is serialized under this lock.
+                        if (!NativeMethods.GlobalMemoryStatusEx(_memoryStatusEx))
                             Logger.Error(new Win32Exception(Marshal.GetLastWin32Error()));
 
-                        _memory.Update(memoryStatusEx);
+                        _memory.Update(_memoryStatusEx);
                     }
                     catch (Exception e)
                     {
@@ -117,6 +120,11 @@ namespace WinMemoryCleaner
         /// <returns></returns>
         private bool SetIncreasePrivilege(string privilegeName)
         {
+            // Memoized: privileges enabled on the process token persist until the token is closed,
+            // so repeat AdjustTokenPrivileges calls during each optimize are pure overhead
+            if (_privilegeCache.Contains(privilegeName))
+                return true;
+
             var result = false;
 
             using (var current = WindowsIdentity.GetCurrent(TokenAccessLevels.Query | TokenAccessLevels.AdjustPrivileges))
@@ -136,6 +144,9 @@ namespace WinMemoryCleaner
                 if (!result)
                     Logger.Error(new Win32Exception(Marshal.GetLastWin32Error()));
             }
+
+            if (result)
+                _privilegeCache.Add(privilegeName);
 
             return result;
         }
@@ -471,7 +482,8 @@ namespace WinMemoryCleaner
             if (!SetIncreasePrivilege(Constants.Windows.Privilege.SeProfSingleProcessName))
                 throw new Exception(string.Format(Localizer.Culture, Localizer.String.ErrorAdminPrivilegeRequired, Constants.Windows.Privilege.SeProfSingleProcessName));
 
-            var handle = GCHandle.Alloc(0);
+            // Default (unallocated) handle - pinned only inside the try block
+            GCHandle handle = new GCHandle();
 
             try
             {
@@ -674,7 +686,8 @@ namespace WinMemoryCleaner
             if (!SetIncreasePrivilege(Constants.Windows.Privilege.SeIncreaseQuotaName))
                 throw new Exception(string.Format(Localizer.Culture, Localizer.String.ErrorAdminPrivilegeRequired, Constants.Windows.Privilege.SeIncreaseQuotaName));
 
-            var handle = GCHandle.Alloc(0);
+            // Default (unallocated) handle - pinned only inside the try block
+            GCHandle handle = new GCHandle();
 
             try
             {

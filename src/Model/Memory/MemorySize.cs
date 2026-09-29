@@ -107,8 +107,6 @@
                 _unit = memory.Value;
                 RaisePropertyChanged("Unit");
             }
-
-            RaisePropertyChanged("Bytes");
         }
 
         #endregion

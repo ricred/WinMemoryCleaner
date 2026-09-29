@@ -395,15 +395,15 @@ namespace WinMemoryCleaner.Test
                 
                 try
                 {
-                    // Test various intervals
-                    Settings.AutoOptimizationInterval = 5;
-                    Assert.AreEqual(5, Settings.AutoOptimizationInterval);
-                    
+                    // Test various intervals (minutes)
                     Settings.AutoOptimizationInterval = 10;
                     Assert.AreEqual(10, Settings.AutoOptimizationInterval);
-                    
+
                     Settings.AutoOptimizationInterval = 30;
                     Assert.AreEqual(30, Settings.AutoOptimizationInterval);
+
+                    Settings.AutoOptimizationInterval = 60;
+                    Assert.AreEqual(60, Settings.AutoOptimizationInterval);
                     
                     // Test various memory usage thresholds
                     Settings.AutoOptimizationMemoryUsage = 50;

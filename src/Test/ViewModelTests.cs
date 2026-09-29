@@ -167,28 +167,37 @@ namespace WinMemoryCleaner.Test
             [Test]
             public void AutoOptimizationInterval_SetTo1Hour_UpdatesCorrectly()
             {
-                _viewModel.AutoOptimizationInterval = 1;
+                _viewModel.AutoOptimizationInterval = 60;
 
-                Assert.AreEqual(1, _viewModel.AutoOptimizationInterval);
-                Assert.AreEqual(1, Settings.AutoOptimizationInterval);
+                Assert.AreEqual(60, _viewModel.AutoOptimizationInterval);
+                Assert.AreEqual(60, Settings.AutoOptimizationInterval);
+            }
+
+            [Test]
+            public void AutoOptimizationInterval_SetTo10Minutes_UpdatesCorrectly()
+            {
+                _viewModel.AutoOptimizationInterval = 10;
+
+                Assert.AreEqual(10, _viewModel.AutoOptimizationInterval);
+                Assert.AreEqual(10, Settings.AutoOptimizationInterval);
             }
 
             [Test]
             public void AutoOptimizationInterval_SetTo12Hours_UpdatesCorrectly()
             {
-                _viewModel.AutoOptimizationInterval = 12;
+                _viewModel.AutoOptimizationInterval = 720;
 
-                Assert.AreEqual(12, _viewModel.AutoOptimizationInterval);
-                Assert.AreEqual(12, Settings.AutoOptimizationInterval);
+                Assert.AreEqual(720, _viewModel.AutoOptimizationInterval);
+                Assert.AreEqual(720, Settings.AutoOptimizationInterval);
             }
 
             [Test]
             public void AutoOptimizationInterval_SetTo24Hours_UpdatesCorrectly()
             {
-                _viewModel.AutoOptimizationInterval = 24;
+                _viewModel.AutoOptimizationInterval = 1440;
 
-                Assert.AreEqual(24, _viewModel.AutoOptimizationInterval);
-                Assert.AreEqual(24, Settings.AutoOptimizationInterval);
+                Assert.AreEqual(1440, _viewModel.AutoOptimizationInterval);
+                Assert.AreEqual(1440, Settings.AutoOptimizationInterval);
             }
 
             [Test]
