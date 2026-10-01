@@ -625,8 +625,10 @@ namespace WinMemoryCleaner
             if (WpfApplication.Current == null || WpfApplication.Current.Dispatcher == null)
                 return;
 
-            // Multi-threading trick
-            WpfApplication.Current.Dispatcher.Invoke((Action)delegate
+            // Multi-threading trick - async on purpose: callers run this from worker threads that may
+            // hold the MainViewModel lock; a synchronous marshal to a busy/starved UI thread would
+            // block them indefinitely and pile every other background operation on the same lock.
+            WpfApplication.Current.Dispatcher.BeginInvoke((Action)delegate
             {
                 Mouse.OverrideCursor = running ? Cursors.Wait : null;
 
@@ -720,7 +722,9 @@ namespace WinMemoryCleaner
 
             try
             {
-                WpfApplication.Current.Dispatcher.Invoke((Action)delegate
+                // BeginInvoke: Update() callers (monitor/optimize worker threads) hold no UI obligation;
+                // a sync marshal here would block a worker on a busy UI thread mid-optimization.
+                WpfApplication.Current.Dispatcher.BeginInvoke((Action)delegate
                 {
                     try
                     {
@@ -767,7 +771,7 @@ namespace WinMemoryCleaner
                     return;
                 }
 
-                WpfApplication.Current.Dispatcher.Invoke((Action)delegate
+                WpfApplication.Current.Dispatcher.BeginInvoke((Action)delegate
                 {
                     CleanupRotationTimer();
                 });

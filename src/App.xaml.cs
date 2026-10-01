@@ -29,6 +29,10 @@ namespace WinMemoryCleaner
         private static WinForms.NotifyIcon _notifyIcon;
         private static readonly List<string> _notifications = new List<string>();
         private static readonly object _showHidelock = new object();
+        private static Thread _uiThread;
+        private static uint _uiThreadId;
+        private static EventWaitHandle _activateEvent;
+        private static RegisteredWaitHandle _activateWaitHandle;
 
         #endregion
 
@@ -39,6 +43,18 @@ namespace WinMemoryCleaner
         /// </summary>
         public App()
         {
+            // Capture the UI thread so SetPriority can exempt it from priority demotion
+            _uiThread = Thread.CurrentThread;
+
+            try
+            {
+                _uiThreadId = NativeMethods.GetCurrentThreadId();
+            }
+            catch
+            {
+                _uiThreadId = 0;
+            }
+
             // Log
             Logger.Level = IsInDebugMode ? Enums.Log.Levels.Debug : Enums.Log.Levels.Information;
 
@@ -149,6 +165,34 @@ namespace WinMemoryCleaner
                     _mutex = null;
                 }
 
+                if (_activateWaitHandle != null)
+                {
+                    try
+                    {
+                        _activateWaitHandle.Unregister(null);
+                    }
+                    catch
+                    {
+                        // ignored
+                    }
+
+                    _activateWaitHandle = null;
+                }
+
+                if (_activateEvent != null)
+                {
+                    try
+                    {
+                        _activateEvent.Dispose();
+                    }
+                    catch
+                    {
+                        // ignored
+                    }
+
+                    _activateEvent = null;
+                }
+
                 try
                 {
                     if (_notifyIcon != null)
@@ -182,6 +226,22 @@ namespace WinMemoryCleaner
             _mutex = new Mutex(true, Constants.App.Id, out createdNew);
             _isRunning = !createdNew;
 
+            // Single-instance activation channel: a second launch sets this event so the running
+            // instance shows its own window. Window-handle tricks (FindWindow) cannot reach an
+            // instance whose window was never created (StartMinimized) or was already destroyed.
+            if (!_isRunning)
+            {
+                try
+                {
+                    _activateEvent = new EventWaitHandle(false, EventResetMode.AutoReset, Constants.App.ActivationEventName);
+                    _activateWaitHandle = ThreadPool.RegisterWaitForSingleObject(_activateEvent, OnActivationSignal, null, Timeout.Infinite, false);
+                }
+                catch (Exception e)
+                {
+                    Logger.Error(e);
+                }
+            }
+
             // App Migration
             if (!_isRunning)
                 Migrator.Run();
@@ -204,6 +264,39 @@ namespace WinMemoryCleaner
                 FileName = uri.AbsoluteUri,
                 UseShellExecute = true
             })) { }
+        }
+
+        /// <summary>
+        /// Called when a second instance asks this instance to show its main window.
+        /// </summary>
+        /// <param name="state">Wait state (unused)</param>
+        /// <param name="timedOut">Always false - the wait never times out</param>
+        private static void OnActivationSignal(object state, bool timedOut)
+        {
+            var app = Current;
+            var window = app != null ? app.MainWindow : null;
+
+            if (window == null)
+                return;
+
+            try
+            {
+                window.Dispatcher.BeginInvoke((Action)delegate
+                {
+                    window.ShowInTaskbar = true;
+                    window.Show();
+
+                    if (window.WindowState == WindowState.Minimized)
+                        window.WindowState = WindowState.Normal;
+
+                    window.Activate();
+                    window.Focus();
+                });
+            }
+            catch (Exception e)
+            {
+                Logger.Error(e);
+            }
         }
 
         /// <summary>
@@ -450,13 +543,34 @@ namespace WinMemoryCleaner
                             {
                                 var appHandle = NativeMethods.FindWindow(null, Constants.App.Title);
 
-                                if (appHandle != IntPtr.Zero && NativeMethods.IsWindowVisible(appHandle))
+                                if (appHandle != IntPtr.Zero)
                                 {
                                     int appId;
 
                                     if (NativeMethods.GetWindowThreadProcessId(appHandle, out appId) != Constants.Windows.SystemErrorCode.ErrorSuccess)
                                         NativeMethods.AllowSetForegroundWindow(appId);
+                                }
 
+                                // Preferred activation path: tell the running instance to show itself.
+                                // Works even when its window does not exist (hidden, destroyed, StartMinimized).
+                                var signaled = false;
+
+                                try
+                                {
+                                    using (var activate = EventWaitHandle.OpenExisting(Constants.App.ActivationEventName))
+                                    {
+                                        signaled = activate.Set();
+                                    }
+                                }
+                                catch
+                                {
+                                    // No activation channel (older running instance) - fall back to
+                                    // restoring the window directly via its handle, if it has one.
+                                    // SW_RESTORE shows a hidden window and un-minimizes a minimized one.
+                                }
+
+                                if (!signaled && appHandle != IntPtr.Zero)
+                                {
                                     NativeMethods.ShowWindowAsync(appHandle, Constants.Windows.ShowWindow.Restore);
                                     NativeMethods.SetForegroundWindow(appHandle);
                                 }
@@ -599,6 +713,24 @@ namespace WinMemoryCleaner
         /// Releases the app memory
         /// </summary>
         public static void ReleaseMemory()
+        {
+            // The blocking full GC (Collect + WaitForPendingFinalizers + Collect) can stall for a
+            // long time under memory pressure. It used to run on the UI thread (tray click, close,
+            // compact mode) and froze the GUI exactly when the user tried to show it. When called
+            // from the UI thread, push the work to the thread pool and return immediately.
+            if (System.Windows.Threading.Dispatcher.FromThread(Thread.CurrentThread) != null)
+            {
+                ThreadPool.QueueUserWorkItem(delegate { ReleaseMemoryInternal(); });
+                return;
+            }
+
+            ReleaseMemoryInternal();
+        }
+
+        /// <summary>
+        /// Releases the app memory (worker thread body)
+        /// </summary>
+        private static void ReleaseMemoryInternal()
         {
             // Garbage Collector
             try
@@ -791,7 +923,11 @@ namespace WinMemoryCleaner
             {
                 case Enums.Priority.Low:
                     priorityBoostEnabled = false;
-                    processPriorityClass = ProcessPriorityClass.Idle;
+                    // The process class must stay Normal: ProcessPriorityClass.Idle starves the
+                    // WPF UI thread whenever the system is under CPU load, leaving the GUI
+                    // permanently unresponsive (window/tray icon never show again). "Low" is
+                    // honored by demoting only background threads instead.
+                    processPriorityClass = ProcessPriorityClass.Normal;
                     threadPriority = ThreadPriority.Lowest;
                     threadPriorityLevel = ThreadPriorityLevel.Idle;
                     break;
@@ -816,7 +952,9 @@ namespace WinMemoryCleaner
 
             try
             {
-                Thread.CurrentThread.Priority = threadPriority;
+                // Never demote the UI thread - the GUI must stay responsive at any app priority
+                if (!ReferenceEquals(Thread.CurrentThread, _uiThread))
+                    Thread.CurrentThread.Priority = threadPriority;
             }
             catch
             {
@@ -847,6 +985,35 @@ namespace WinMemoryCleaner
 
                     foreach (ProcessThread thread in process.Threads)
                     {
+                        // Never demote the UI thread - it owns the WPF dispatcher and the tray icon;
+                        // at Idle priority it stops being scheduled under CPU load and the app freezes
+                        if (_uiThreadId != 0 && thread.Id == _uiThreadId)
+                        {
+                            try
+                            {
+                                thread.PriorityBoostEnabled = true;
+                            }
+                            catch
+                            {
+                                // ignored
+                            }
+
+                            try
+                            {
+                                thread.PriorityLevel = ThreadPriorityLevel.Normal;
+                            }
+                            catch
+                            {
+                                // ignored
+                            }
+                            finally
+                            {
+                                thread.Dispose();
+                            }
+
+                            continue;
+                        }
+
                         try
                         {
                             thread.PriorityBoostEnabled = priorityBoostEnabled;

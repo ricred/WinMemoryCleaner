@@ -53,6 +53,9 @@ namespace WinMemoryCleaner
         internal static extern bool FlushFileBuffers(SafeFileHandle hFile);
 
         [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern uint GetCurrentThreadId();
+
+        [DllImport("kernel32.dll", SetLastError = true)]
         internal static extern IntPtr GetStdHandle(int nStdHandle);
 
         [DllImport("user32.dll", SetLastError = true)]

@@ -13,6 +13,7 @@ namespace WinMemoryCleaner
         {
             public const int AutoOptimizationMemoryUsageInterval = 5; // Minute
             public const int AutoUpdateInterval = 24; // Hour
+            public const string ActivationEventName = Id + ".Activate";
             public const string EmbeddedResourcePath = "WinMemoryCleaner.Resources.";
             public const string EmbeddedResourcePathExtension = ".json";
             public const string Id = "C7F29A45-8B3E-4D2F-9A1C-5E7B2D4F8C6A";

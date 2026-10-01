@@ -741,8 +741,20 @@ namespace WinMemoryCleaner
 
                 // Use ToList() to force immediate enumeration and ensure proper disposal of all process handles
                 // This prevents handle leaks that can accumulate after multiple optimization cycles
+                // NOTE: the app's own process is skipped - emptying our own working set turns the app
+                // into a hard-fault storm under memory pressure (every page re-read from disk), which
+                // combined with priority demotion left the GUI permanently unresponsive.
+                int currentProcessId;
+
+                using (var current = Process.GetCurrentProcess())
+                {
+                    currentProcessId = current.Id;
+                }
+
                 var processes = Process.GetProcesses()
-                    .Where(process => process != null && !Settings.ProcessExclusionList.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase))
+                    .Where(process => process != null
+                        && process.Id != currentProcessId
+                        && !Settings.ProcessExclusionList.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase))
                     .ToList();
 
                 foreach (var process in processes)
